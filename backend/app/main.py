@@ -2,16 +2,25 @@
 
 import logging
 from contextlib import asynccontextmanager
+from datetime import datetime, timezone
 
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
 from .event_bus import EventBus
-from .models import WorkObject
+from .models import (
+    AdapterFieldMapping,
+    AdapterMapping,
+    ClassificationLevelConfig,
+    ClassificationSchema,
+    GoogleDriveConfig,
+    WorkObject,
+)
 from .orchestrator import Orchestrator
 from .run_manager import RunManager
 from .simulation import build_demo_work_object
+from .tenant_config import TenantConfigStore
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -19,6 +28,7 @@ logger = logging.getLogger(__name__)
 run_manager = RunManager()
 event_bus = EventBus()
 orchestrator = Orchestrator(run_manager, event_bus)
+tenant_config = TenantConfigStore()
 
 DEMO_RUN_ID = "demo-run-1"
 DEMO_TENANT_ID = "demo-tenant"
@@ -117,3 +127,106 @@ async def run_events(websocket: WebSocket, run_id: str) -> None:
 
     finally:
         event_bus.unsubscribe(run_id, queue)
+
+
+# ── Admin configuration endpoints ────────────────────────────────────────────
+
+
+def _validate_tenant_id(tenant_id: str) -> None:
+    if not tenant_id.strip():
+        raise HTTPException(status_code=422, detail="tenant_id must not be empty")
+
+
+# ── Classification schema ────────────────────────────────────────────────────
+
+
+class UpsertClassificationSchemaRequest(BaseModel):
+    levels: list[ClassificationLevelConfig]
+    version: str
+
+
+@app.get("/admin/{tenant_id}/classification-schema")
+async def get_classification_schema(tenant_id: str):
+    _validate_tenant_id(tenant_id)
+    schema = tenant_config.get_schema(tenant_id)
+    if schema is None:
+        raise HTTPException(status_code=404, detail="Classification schema not found")
+    return schema.model_dump()
+
+
+@app.put("/admin/{tenant_id}/classification-schema")
+async def put_classification_schema(tenant_id: str, body: UpsertClassificationSchemaRequest):
+    _validate_tenant_id(tenant_id)
+    schema = ClassificationSchema(
+        tenant_id=tenant_id,
+        levels=body.levels,
+        version=body.version,
+        updated_at=datetime.now(timezone.utc),
+    )
+    tenant_config.upsert_schema(schema)
+    return schema.model_dump()
+
+
+# ── Adapter mappings ─────────────────────────────────────────────────────────
+
+
+class UpsertAdapterMappingRequest(BaseModel):
+    source_system: str
+    record_type: str
+    mappings: list[AdapterFieldMapping]
+
+
+@app.get("/admin/{tenant_id}/adapter-mappings")
+async def get_adapter_mapping(
+    tenant_id: str,
+    source_system: str = Query(...),
+    record_type: str = Query(...),
+):
+    _validate_tenant_id(tenant_id)
+    mapping = tenant_config.get_adapter_mapping(tenant_id, source_system, record_type)
+    if mapping is None:
+        raise HTTPException(status_code=404, detail="Adapter mapping not found")
+    return mapping.model_dump()
+
+
+@app.put("/admin/{tenant_id}/adapter-mappings")
+async def put_adapter_mapping(tenant_id: str, body: UpsertAdapterMappingRequest):
+    _validate_tenant_id(tenant_id)
+    mapping = AdapterMapping(
+        tenant_id=tenant_id,
+        source_system=body.source_system,
+        record_type=body.record_type,
+        mappings=body.mappings,
+        updated_at=datetime.now(timezone.utc),
+    )
+    tenant_config.upsert_adapter_mapping(mapping)
+    return mapping.model_dump()
+
+
+# ── Google Drive config ──────────────────────────────────────────────────────
+
+
+class UpsertGoogleDriveConfigRequest(BaseModel):
+    root_folder_id: str | None = None
+
+
+@app.get("/admin/{tenant_id}/google-drive")
+async def get_google_drive_config(tenant_id: str):
+    _validate_tenant_id(tenant_id)
+    config = tenant_config.get_drive_config(tenant_id)
+    if config is None:
+        raise HTTPException(status_code=404, detail="Google Drive config not found")
+    return config.model_dump()
+
+
+@app.put("/admin/{tenant_id}/google-drive")
+async def put_google_drive_config(tenant_id: str, body: UpsertGoogleDriveConfigRequest):
+    _validate_tenant_id(tenant_id)
+    config = GoogleDriveConfig(
+        tenant_id=tenant_id,
+        root_folder_id=body.root_folder_id,
+        status="configured" if body.root_folder_id else "not_configured",
+        updated_at=datetime.now(timezone.utc),
+    )
+    tenant_config.upsert_drive_config(config)
+    return config.model_dump()

@@ -1,7 +1,9 @@
-"""Pydantic models mirroring the frontend TypeScript types in types/agents.ts."""
+"""Pydantic models mirroring the frontend TypeScript types in types/agents.ts,
+plus tenant-level admin configuration models."""
 
 from __future__ import annotations
 
+from datetime import datetime
 from typing import Any, Literal
 
 from pydantic import BaseModel
@@ -93,3 +95,39 @@ class RunFailedMessage(BaseModel):
 
 
 WebSocketMessage = RunStartedMessage | SkillUpdateMessage | RunCompletedMessage | RunFailedMessage
+
+
+# ── Tenant admin configuration models ───────────────────────────────────────
+
+
+class ClassificationLevelConfig(BaseModel):
+    key: str
+    display_name: str
+    required: bool
+
+
+class ClassificationSchema(BaseModel):
+    tenant_id: str
+    levels: list[ClassificationLevelConfig]
+    version: str
+    updated_at: datetime
+
+
+class AdapterFieldMapping(BaseModel):
+    source_field: str
+    classification_key: str
+
+
+class AdapterMapping(BaseModel):
+    tenant_id: str
+    source_system: str
+    record_type: str
+    mappings: list[AdapterFieldMapping]
+    updated_at: datetime
+
+
+class GoogleDriveConfig(BaseModel):
+    tenant_id: str
+    root_folder_id: str | None
+    status: Literal["not_configured", "configured"]
+    updated_at: datetime
