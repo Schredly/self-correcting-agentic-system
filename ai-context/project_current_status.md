@@ -1,5 +1,17 @@
 # Project Current Status
 
+****
+**2026-03-01 08:30 UTC** — EventBus + Orchestrator refactor
+
+- `fc8be7f` — Add EventBus + Orchestrator, make WebSocket subscriber-only
+- **`backend/app/event_bus.py`** (new) — In-memory per-run event bus with `subscribe(run_id)`, `unsubscribe(run_id, queue)`, `publish(run_id, message)`. Maintains per-run event history so late-joining WebSocket clients get full replay on connect.
+- **`backend/app/orchestrator.py`** (new) — `Orchestrator` class with `start_run(run_id)` (launches asyncio task) and `_execute_run(run_id)` (marks run as running via RunManager, publishes `run_started` from RunManager's authoritative AgentRun, iterates `simulate_skill_events()` publishing each message to EventBus, marks completed/failed in RunManager).
+- **`backend/app/run_manager.py`** (updated) — Added `mark_running(run_id)` method. `create_run` now accepts optional `run_id` parameter (falls back to UUID).
+- **`backend/app/simulation.py`** (updated) — Renamed `_build_work_object` → `build_demo_work_object` (public). Added `simulate_skill_events(run_id)` — yields only `skill_update` + `run_completed` (no `run_started`), for use by Orchestrator. Original `simulate_demo_run` preserved.
+- **`backend/app/main.py`** (rewritten) — Instantiates `RunManager`, `EventBus`, `Orchestrator` at module level. Lifespan handler seeds and starts `demo-run-1` on startup so frontend works out of the box. `POST /runs` now triggers `orchestrator.start_run()`. Added `GET /runs/{run_id}` (returns AgentRun, 404 if missing). WebSocket is now subscriber-only: validates run exists (closes 1008 if not), subscribes to EventBus, streams from queue, closes after terminal events.
+- **Architecture shift**: WebSocket no longer drives execution — it only subscribes to events. Execution is triggered by `POST /runs` and managed by the Orchestrator via EventBus.
+****
+
 ## What exists on disk (pushed to `origin/main`)
 
 ### Repository
@@ -15,6 +27,8 @@
   - `14cfdea` — Update project status doc with backend implementation details
   - `ae23bf4` — Add RunManager class and POST /runs endpoint
   - `c853adf` — Populate ai-context architecture docs (01–09) and update status doc
+  - `284b8da` — Update project status doc with RunManager and ai-context details
+  - `fc8be7f` — Add EventBus + Orchestrator, make WebSocket subscriber-only
 
 ### Directory structure
 ```
@@ -25,10 +39,12 @@ self-correcting-agentic-system/
 │   ├── pyproject.toml          # fastapi, uvicorn, pydantic (pip install -e .)
 │   └── app/
 │       ├── __init__.py
-│       ├── main.py             # FastAPI app + WebSocket + REST endpoints + CORS
+│       ├── event_bus.py        # In-memory per-run EventBus with history replay
+│       ├── main.py             # FastAPI app + WebSocket (subscriber) + REST + CORS
 │       ├── models.py           # Pydantic models mirroring frontend TS types
-│       ├── run_manager.py      # RunManager — in-memory run lifecycle (create, get, complete, fail)
-│       └── simulation.py       # Async generator yielding timed demo events (~25s)
+│       ├── orchestrator.py     # Orchestrator — drives execution, publishes to EventBus
+│       ├── run_manager.py      # RunManager — in-memory run lifecycle (create, get, running, complete, fail)
+│       └── simulation.py       # Async generators for timed demo events (~25s)
 └── frontend/
     ├── index.html              # Vite entry HTML
     ├── package.json            # 43 deps, scripts: dev/build/preview
@@ -181,7 +197,16 @@ export interface AgentEvent {
    - `backend/app/main.py` updated with `POST /runs` endpoint (accepts `{ tenant_id, work_object }`, returns `{ run_id, status }`, HTTP 201)
    - WebSocket endpoint unchanged — still uses simulation.py directly
 10. **ai-context docs populated** (`c853adf`) — architecture principles (01), canonical data model (02), event stream contract (03), adapter model (04), multi-tenant model (05), UI contract rules (06), skill execution model (07), evaluation model (08), non-goals (09)
-11. **Frontend toolchain set up** (`128b0e9`):
+11. **EventBus + Orchestrator refactor** (`fc8be7f`):
+    - WebSocket is now subscriber-only — no longer drives execution directly
+    - `EventBus` broadcasts events to all subscribers with per-run history replay for late joiners
+    - `Orchestrator` drives execution: marks run running, publishes `run_started` from RunManager, iterates simulation, publishes events, marks completed/failed
+    - `POST /runs` triggers `orchestrator.start_run()` immediately after creation
+    - `GET /runs/{run_id}` returns current AgentRun state (404 if missing)
+    - Demo run `demo-run-1` auto-seeded and started on server startup via lifespan handler
+    - `RunManager.mark_running()` added, `create_run()` accepts optional `run_id`
+    - `simulation.py` exports `build_demo_work_object()` and `simulate_skill_events()` (skill_updates + run_completed only)
+12. **Frontend toolchain set up** (`128b0e9`):
    - `package.json` — 43 dependencies, scripts: `dev`, `build`, `preview`
    - `tsconfig.json` — strict mode, bundler resolution, `@/*` path alias, `noUncheckedIndexedAccess`
    - `vite.config.ts` — `@vitejs/plugin-react` + `@tailwindcss/vite`, `@/` alias, dev server on port 3000 with proxy to `localhost:8000` (API + WebSocket)
@@ -220,10 +245,10 @@ export interface AgentEvent {
 ## What still needs to be done
 
 ### Backend
-- **WebSocket server implemented** — simulated demo run works end-to-end
-- **RunManager class added** — in-memory run lifecycle, `POST /runs` endpoint
-- Next: wire WebSocket endpoint to use RunManager-created runs instead of standalone simulation
-- Next: replace scripted simulation with real agent orchestration layer
+- **Event-driven architecture complete** — EventBus + Orchestrator + RunManager + subscriber-only WebSocket
+- **Demo simulation works end-to-end** — `POST /runs` triggers execution, WebSocket streams events with history replay
+- Next: replace scripted simulation with real agent orchestration (LLM-driven skills)
+- Next: persistent storage (replace in-memory RunManager)
 
 ### Other screens
 - `EvaluationDashboard.tsx`, `AdapterConfiguration.tsx`, `ClassificationManager.tsx`, `KnowledgeAlignment.tsx` — still have their own data needs (not addressed yet)
@@ -279,6 +304,7 @@ export interface AgentEvent {
 |--------|------|-------------|----------|--------|
 | `GET` | `/health` | — | `{ "status": "ok" }` | 200 |
 | `POST` | `/runs` | `{ "tenant_id": string, "work_object": WorkObject }` | `{ "run_id": string, "status": "queued" }` | 201 |
+| `GET` | `/runs/{run_id}` | — | `AgentRun` (full object) | 200 / 404 |
 
 ### WebSocket message envelope (expected from backend)
 ```json
