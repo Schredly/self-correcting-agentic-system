@@ -1,6 +1,43 @@
 # Project Current Status
 
 ****
+**2026-03-01 17:00 UTC** — Add TenantManagement screen with create/delete
+
+- `dc68187` — Add TenantManagement screen with create/delete functionality
+- **`frontend/src/lib/api.ts`** (updated) — Added `TenantDetail` interface (`id`, `name`, `enabled_adapters`, `status` draft/active, `created_at`), `CreateTenantParams` interface, and 3 API helpers: `fetchTenant(id)`, `createTenant(params)`, `deleteTenant(id)`
+- **`frontend/src/app/context/TenantContext.tsx`** (updated) — Extended `TenantContextValue` with `createTenant`, `deleteTenant`, `refreshTenants`. Extracted fetch logic into reusable `loadTenants()`. Updated `setSelectedTenant` to accept `Tenant | null`. Deleting selected tenant auto-clears selection.
+- **`frontend/src/app/screens/TenantManagement.tsx`** (new) — Full tenant management screen:
+  - Table with Name, ID, Status (dual badges: summary + detail), Adapters, Created, Delete action
+  - Empty state with Building2 icon + CTA
+  - `AddTenantModal` — name with auto-slugified ID, adapter checkboxes (ServiceNow/Jira/Salesforce), inline 409 error, auto-selects new tenant
+  - Delete flow — AlertDialog confirmation, destructive red button, calls context `deleteTenant()`
+  - Enriches tenant summaries by fetching `TenantDetail` for each via `fetchTenant()`
+- **`frontend/src/app/routes.ts`** (updated) — Added `{ path: "admin/tenants", Component: TenantManagement }` route
+- **`frontend/src/app/components/Layout.tsx`** (updated) — Added `Building2` icon import, "Tenants" as first Admin nav child at `/admin/tenants`
+- **Verified** — `tsc --noEmit` no new errors, `vite build` succeeds (2838 modules, 341 KB gzipped JS)
+****
+
+****
+**2026-03-01 16:00 UTC** — Full tenant CRUD endpoints, replace demo seeding
+
+- `3a13572` — Add full tenant CRUD endpoints and replace demo seeding
+- **`backend/app/models.py`** (updated) — Added `Tenant` model (`id`, `name`, `enabled_adapters`, `status` draft/active, `created_at`) and `TenantCreateRequest` model (`id`, `name`, `enabled_adapters`)
+- **`backend/app/tenant_config.py`** (rewritten) — Replaced simple `dict[str, str]` tenant registry with full `dict[str, Tenant]` CRUD:
+  - `create_tenant(tenant)` — raises `ValueError` if tenant already exists
+  - `get_tenant(tenant_id)` — returns `Tenant | None`
+  - `list_tenants()` — returns `list[Tenant]` (was `dict[str, str]`)
+  - `delete_tenant(tenant_id)` — cascade deletes schemas, drive configs, and adapter mappings for that tenant; returns `bool`
+- **`backend/app/main.py`** (updated) — Removed `DEMO_TENANTS` dict, removed all `register_tenant()` calls in lifespan, removed `build_demo_work_object` import. Added 3 new tenant CRUD endpoints:
+  - `POST /tenants` (201) — creates tenant with server-set `created_at`, returns `Tenant`, 409 if already exists
+  - `GET /tenants/{tenant_id}` (200) — returns full `Tenant`, 404 if not found
+  - `DELETE /tenants/{tenant_id}` (204) — cascade deletes all config, 404 if not found
+  - Updated `GET /tenants` to iterate `Tenant` objects from `list_tenants()` (accessing `t.id`, `t.name` instead of tuple unpacking)
+  - Updated `GET /admin/{tenant_id}/health` to use `get_tenant()` instead of `list_tenants()` for existence check
+- **No demo seeding** — tenants are now created on-demand via `POST /tenants` (no hardcoded demo data)
+- **Verified** — full CRUD lifecycle tested with curl: create → list → get → delete → verify 404
+****
+
+****
 **2026-03-01 15:00 UTC** — Tenant health endpoint + TenantOnboarding screen
 
 - `e68bf02` — Add GET /admin/{tenant_id}/health endpoint for tenant setup checklist
@@ -225,6 +262,8 @@
   - `9424bb9` — Update project status doc with TenantSelector wiring details
   - `e68bf02` — Add GET /admin/{tenant_id}/health endpoint for tenant setup checklist
   - `409b37d` — Add TenantOnboarding screen with 7-step wizard from Figma UI update
+  - `3a13572` — Add full tenant CRUD endpoints and replace demo seeding
+  - `dc68187` — Add TenantManagement screen with create/delete functionality
 
 ### Directory structure
 ```
@@ -244,12 +283,12 @@ self-correcting-agentic-system/
 │       ├── drive_provider.py    # DriveProvider protocol + DriveNode model
 │       ├── drive_scaffolder.py  # DriveScaffolder — builds folder plans from tenant schema
 │       ├── google_drive_provider.py  # GoogleDriveProvider — Drive v3 + service account + Shared Drive
-│       ├── main.py             # FastAPI app + WebSocket (subscriber) + REST + admin + health + scaffold endpoints + CORS
-│       ├── models.py           # Pydantic models mirroring frontend TS types + admin config + TenantSummary + TenantHealth + ScaffoldApplyRequest
+│       ├── main.py             # FastAPI app + WebSocket (subscriber) + REST + tenant CRUD + admin + health + scaffold endpoints + CORS
+│       ├── models.py           # Pydantic models mirroring frontend TS types + Tenant + admin config + TenantSummary + TenantHealth + ScaffoldApplyRequest
 │       ├── orchestrator.py     # Orchestrator — drives execution, publishes to EventBus
 │       ├── run_manager.py      # RunManager — in-memory run lifecycle (create, get, running, complete, fail, last_run_for_tenant)
 │       ├── simulation.py       # Async generators for timed demo events (~25s)
-│       └── tenant_config.py    # TenantConfigStore — in-memory per-tenant admin config + tenant registry + list_adapter_mappings
+│       └── tenant_config.py    # TenantConfigStore — in-memory tenant CRUD + per-tenant admin config + cascade delete + list_adapter_mappings
 └── frontend/
     ├── index.html              # Vite entry HTML
     ├── package.json            # 43 deps, scripts: dev/build/preview
@@ -263,14 +302,14 @@ self-correcting-agentic-system/
         ├── state/
         │   └── agentReducer.ts # reducer for AgentRun state (run_started, skill_update, run_completed, run_failed)
         ├── lib/
-        │   └── api.ts          # Tenant type + fetchTenants(), createRun() fetch helpers (via Vite proxy)
+        │   └── api.ts          # Tenant + TenantDetail + CreateTenantParams types, fetchTenants/fetchTenant/createTenant/deleteTenant/createRun helpers (via Vite proxy)
         ├── hooks/
         │   └── useAgentRun.ts  # WebSocket hook with tenant_id, nullable runId, reconnect
         ├── app/
         │   ├── App.tsx
         │   ├── routes.ts
         │   ├── context/
-        │   │   └── TenantContext.tsx         # TenantProvider + useTenant() hook (fetches from backend)
+        │   │   └── TenantContext.tsx         # TenantProvider + useTenant() hook (fetches, createTenant, deleteTenant, refreshTenants)
         │   ├── screens/
         │   │   ├── AgentConsole.tsx          # live data via useAgentRun + dynamic tenant from context
         │   │   ├── EvaluationDashboard.tsx   # PageHeader + recharts (mock data)
@@ -279,6 +318,7 @@ self-correcting-agentic-system/
         │   │   ├── KnowledgeAlignment.tsx    # document table + detail panel (mock data)
         │   │   ├── TenantSetup.tsx           # 7-step setup wizard (mock data)
         │   │   ├── TenantOnboarding.tsx     # 7-step onboarding wizard with stepper + accordion (mock data)
+        │   │   ├── TenantManagement.tsx    # tenant CRUD table + AddTenantModal + delete confirmation (wired to backend)
         │   │   └── ServiceNowConnector.tsx   # connector config + test console (mock data)
         │   └── components/
         │       ├── Layout.tsx               # top bar + collapsible sidebar + nested admin nav + TenantProvider
@@ -470,7 +510,7 @@ export interface AgentEvent {
     - `TenantConfigStore` extended with tenant registry (`tenants` dict, `register_tenant`, `list_tenants`)
     - `TenantSummary` model added — `id`, `name`, `status` (configured/needs-setup)
     - `GET /tenants` endpoint derives status from schema + drive config presence
-    - 5 demo tenants seeded at startup (demo-tenant, acme-corp, globex, wayne-ent, stark-ind)
+    - 5 demo tenants seeded at startup (demo-tenant, acme-corp, globex, wayne-ent, stark-ind) — *removed in `3a13572`*
     - `TenantContext.tsx` — React Context with `TenantProvider` (fetches on mount, auto-selects "demo-tenant") and `useTenant()` hook
     - `TenantSelector` now reads from context instead of mock data, shows loading state
     - `AgentConsole` uses dynamic `tenantId` from context — switching tenants resets state and creates a new run
@@ -485,7 +525,20 @@ export interface AgentEvent {
     - HorizontalStepper with progress bars, accordion step expansion with motion/react animations
     - Added `/tenant-onboarding` route, "Tenant Onboarding" sidebar nav item with Workflow icon
     - All mock data — not yet wired to backend endpoints
-23. **Frontend toolchain set up** (`128b0e9`):
+23. **Full tenant CRUD** (`3a13572`):
+    - `Tenant` model with `id`, `name`, `enabled_adapters`, `status` (draft/active), `created_at`
+    - `TenantConfigStore` upgraded from simple name registry to full CRUD with `create_tenant`, `get_tenant`, `list_tenants`, `delete_tenant`
+    - Cascade delete: removing a tenant also cleans up schemas, drive configs, and adapter mappings
+    - `POST /tenants` (201, 409), `GET /tenants/{tenant_id}` (200, 404), `DELETE /tenants/{tenant_id}` (204, 404)
+    - Removed hardcoded demo tenant seeding — tenants created on-demand via API
+24. **TenantManagement screen** (`dc68187`):
+    - New screen at `/admin/tenants` with table (Name, ID, Status, Adapters, Created, Actions)
+    - `TenantDetail` type + `fetchTenant`, `createTenant`, `deleteTenant` API helpers in `api.ts`
+    - `TenantContext` extended with `createTenant()`, `deleteTenant()`, `refreshTenants()` methods
+    - `AddTenantModal` — name with auto-slugified ID, adapter checkboxes, inline 409 error handling
+    - Delete flow with AlertDialog confirmation, auto-clears selection if deleted tenant is selected
+    - "Tenants" nav item added as first Admin child with Building2 icon
+25. **Frontend toolchain set up** (`128b0e9`):
    - `package.json` — 43 dependencies, scripts: `dev`, `build`, `preview`
    - `tsconfig.json` — strict mode, bundler resolution, `@/*` path alias, `noUncheckedIndexedAccess`
    - `vite.config.ts` — `@vitejs/plugin-react` + `@tailwindcss/vite`, `@/` alias, dev server on port 3000 with proxy to `localhost:8000` (API + WebSocket)
@@ -533,6 +586,7 @@ export interface AgentEvent {
 - **Drive scaffolding planner complete** — `DriveProvider` protocol, `DriveScaffolder` builds deterministic folder plans, dry-run endpoint live
 - **GoogleDriveProvider complete** — concrete Drive v3 implementation with service account auth, Shared Drive support, scaffold-apply fully wired
 - **Tenant health endpoint** — `GET /admin/{tenant_id}/health` derives setup checklist from stores + run history
+- **Full tenant CRUD** — `POST /tenants`, `GET /tenants/{tenant_id}`, `DELETE /tenants/{tenant_id}` with cascade delete; no hardcoded demo data
 - Next: replace scripted simulation with real agent orchestration (LLM-driven skills)
 - Next: persistent storage (replace in-memory RunManager and TenantConfigStore)
 - Next: authentication layer (currently tenant_id is a query param, not token-derived)
@@ -544,6 +598,7 @@ export interface AgentEvent {
 - **Figma UI redesign incorporated** — new Layout with top bar + collapsible sidebar, PageHeader on all screens, TenantSelector, 2 new screens (TenantSetup, ServiceNowConnector)
 - **TenantSelector wired to backend** — fetches tenants from `GET /tenants`, propagates selection via React Context, AgentConsole resets on tenant switch
 - **TenantOnboarding screen added** — 7-step wizard with stepper + accordion (mock data, not yet wired to backend)
+- **TenantManagement screen added** — full CRUD table at `/admin/tenants`, wired to backend tenant endpoints (create, delete, list, detail enrichment)
 - Next: wire TenantOnboarding steps to backend endpoints (health, classification schema, drive, adapters)
 - Next: make work object configurable (currently hardcoded demo data in AgentConsole)
 - Next: wire TenantSetup wizard steps to admin endpoints
@@ -607,7 +662,10 @@ export interface AgentEvent {
 | Method | Path | Request body | Response | Status |
 |--------|------|-------------|----------|--------|
 | `GET` | `/health` | — | `{ "status": "ok" }` | 200 |
+| `POST` | `/tenants` | `{ "id": string, "name": string, "enabled_adapters"?: string[] }` | `Tenant` | 201 / 409 |
 | `GET` | `/tenants` | — | `TenantSummary[]` (`{ id, name, status }`) | 200 |
+| `GET` | `/tenants/{tenant_id}` | — | `Tenant` | 200 / 404 |
+| `DELETE` | `/tenants/{tenant_id}` | — | — | 204 / 404 |
 | `GET` | `/admin/{tenant_id}/health` | — | `TenantHealth` (7 booleans + `last_run_status`) | 200 / 404 / 422 |
 | `POST` | `/runs` | `{ "tenant_id": string, "work_object": WorkObject }` | `{ "run_id": string, "status": "queued", "tenant_id": string }` | 201 |
 | `GET` | `/runs/{run_id}?tenant_id=` | — | `AgentRun` (full object) | 200 / 404 / 422 |
