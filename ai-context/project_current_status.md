@@ -1,6 +1,18 @@
 # Project Current Status
 
 ****
+**2026-03-01 09:00 UTC** — Tenant isolation enforced
+
+- `9e97c45` — Enforce tenant isolation on REST and WebSocket endpoints
+- **`backend/app/main.py`** (updated) — All run-scoped endpoints now enforce tenant isolation:
+  - `POST /runs` response now includes `tenant_id` in response body (`{ run_id, status, tenant_id }`)
+  - `GET /runs/{run_id}` requires `?tenant_id=` query param; returns 404 on mismatch (no existence leaking)
+  - `WebSocket /runs/{run_id}/events` requires `?tenant_id=` query param; rejects with HTTP 403 on mismatch or missing param
+  - Demo run seeded with `tenant_id="demo-tenant"` (changed from `"tenant-acme-corp"`)
+- **Frontend note**: `useAgentRun` does not yet pass `tenant_id` — frontend will need updating to include `?tenant_id=demo-tenant` in WebSocket URL
+****
+
+****
 **2026-03-01 08:30 UTC** — EventBus + Orchestrator refactor
 
 - `fc8be7f` — Add EventBus + Orchestrator, make WebSocket subscriber-only
@@ -29,6 +41,8 @@
   - `c853adf` — Populate ai-context architecture docs (01–09) and update status doc
   - `284b8da` — Update project status doc with RunManager and ai-context details
   - `fc8be7f` — Add EventBus + Orchestrator, make WebSocket subscriber-only
+  - `f43ef9c` — Update project status doc with EventBus + Orchestrator details
+  - `9e97c45` — Enforce tenant isolation on REST and WebSocket endpoints
 
 ### Directory structure
 ```
@@ -206,7 +220,13 @@ export interface AgentEvent {
     - Demo run `demo-run-1` auto-seeded and started on server startup via lifespan handler
     - `RunManager.mark_running()` added, `create_run()` accepts optional `run_id`
     - `simulation.py` exports `build_demo_work_object()` and `simulate_skill_events()` (skill_updates + run_completed only)
-12. **Frontend toolchain set up** (`128b0e9`):
+12. **Tenant isolation enforced** (`9e97c45`):
+    - `GET /runs/{run_id}` requires `?tenant_id=` query param; 404 on mismatch (no existence leaking), 422 if param missing
+    - `WebSocket /runs/{run_id}/events` requires `?tenant_id=` query param; rejects HTTP 403 on mismatch or missing
+    - `POST /runs` response now returns `{ run_id, status, tenant_id }`
+    - Demo run seeded with `tenant_id="demo-tenant"`
+    - Frontend not yet updated — needs `?tenant_id=demo-tenant` added to WebSocket URL
+13. **Frontend toolchain set up** (`128b0e9`):
    - `package.json` — 43 dependencies, scripts: `dev`, `build`, `preview`
    - `tsconfig.json` — strict mode, bundler resolution, `@/*` path alias, `noUncheckedIndexedAccess`
    - `vite.config.ts` — `@vitejs/plugin-react` + `@tailwindcss/vite`, `@/` alias, dev server on port 3000 with proxy to `localhost:8000` (API + WebSocket)
@@ -246,9 +266,15 @@ export interface AgentEvent {
 
 ### Backend
 - **Event-driven architecture complete** — EventBus + Orchestrator + RunManager + subscriber-only WebSocket
+- **Tenant isolation enforced** — all run-scoped endpoints require `tenant_id`
 - **Demo simulation works end-to-end** — `POST /runs` triggers execution, WebSocket streams events with history replay
 - Next: replace scripted simulation with real agent orchestration (LLM-driven skills)
 - Next: persistent storage (replace in-memory RunManager)
+- Next: authentication layer (currently tenant_id is a query param, not token-derived)
+
+### Frontend (pending)
+- Update `useAgentRun` to pass `?tenant_id=demo-tenant` in WebSocket URL
+- Frontend currently cannot connect due to tenant isolation enforcement
 
 ### Other screens
 - `EvaluationDashboard.tsx`, `AdapterConfiguration.tsx`, `ClassificationManager.tsx`, `KnowledgeAlignment.tsx` — still have their own data needs (not addressed yet)
@@ -303,8 +329,8 @@ export interface AgentEvent {
 | Method | Path | Request body | Response | Status |
 |--------|------|-------------|----------|--------|
 | `GET` | `/health` | — | `{ "status": "ok" }` | 200 |
-| `POST` | `/runs` | `{ "tenant_id": string, "work_object": WorkObject }` | `{ "run_id": string, "status": "queued" }` | 201 |
-| `GET` | `/runs/{run_id}` | — | `AgentRun` (full object) | 200 / 404 |
+| `POST` | `/runs` | `{ "tenant_id": string, "work_object": WorkObject }` | `{ "run_id": string, "status": "queued", "tenant_id": string }` | 201 |
+| `GET` | `/runs/{run_id}?tenant_id=` | — | `AgentRun` (full object) | 200 / 404 / 422 |
 
 ### WebSocket message envelope (expected from backend)
 ```json
