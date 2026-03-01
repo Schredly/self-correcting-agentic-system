@@ -1,19 +1,42 @@
-"""FastAPI app with WebSocket endpoint for streaming agent run events."""
+"""FastAPI app with event-driven WebSocket streaming and REST endpoints."""
 
 import logging
+from contextlib import asynccontextmanager
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, HTTPException, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
-from .models import RunFailedMessage, WorkObject
+from .event_bus import EventBus
+from .models import WorkObject
+from .orchestrator import Orchestrator
 from .run_manager import RunManager
-from .simulation import simulate_demo_run
+from .simulation import build_demo_work_object
 
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
 
-app = FastAPI(title="Agent Control Plane — Demo Backend")
+run_manager = RunManager()
+event_bus = EventBus()
+orchestrator = Orchestrator(run_manager, event_bus)
+
+DEMO_RUN_ID = "demo-run-1"
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):  # noqa: ARG001
+    """Seed and start the demo run so the frontend works out of the box."""
+    run_manager.create_run(
+        work_object=build_demo_work_object(),
+        tenant_id="tenant-acme-corp",
+        run_id=DEMO_RUN_ID,
+    )
+    orchestrator.start_run(DEMO_RUN_ID)
+    logger.info("Demo run seeded and started — run_id=%s", DEMO_RUN_ID)
+    yield
+
+
+app = FastAPI(title="Agent Control Plane — Demo Backend", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -21,8 +44,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-run_manager = RunManager()
 
 
 # ── REST endpoints ───────────────────────────────────────────────────────────
@@ -49,34 +70,46 @@ async def create_run(body: CreateRunRequest) -> CreateRunResponse:
         work_object=body.work_object,
         tenant_id=body.tenant_id,
     )
-    logger.info("Run created — run_id=%s, tenant=%s", run.run_id, run.tenant_id)
+    orchestrator.start_run(run.run_id)
+    logger.info("Run created and started — run_id=%s, tenant=%s", run.run_id, run.tenant_id)
     return CreateRunResponse(run_id=run.run_id, status=run.status)
 
 
-# ── WebSocket endpoint (unchanged) ──────────────────────────────────────────
+@app.get("/runs/{run_id}")
+async def get_run(run_id: str):
+    run = run_manager.get_run(run_id)
+    if run is None:
+        raise HTTPException(status_code=404, detail="Run not found")
+    return run.model_dump()
+
+
+# ── WebSocket endpoint (subscriber-only) ────────────────────────────────────
 
 
 @app.websocket("/runs/{run_id}/events")
 async def run_events(websocket: WebSocket, run_id: str) -> None:
+    # Validate run exists before accepting
+    if run_manager.get_run(run_id) is None:
+        await websocket.close(code=1008, reason="Run not found")
+        return
+
     await websocket.accept()
     logger.info("WebSocket connected — run_id=%s", run_id)
 
+    queue = event_bus.subscribe(run_id)
     try:
-        async for message in simulate_demo_run(run_id):
-            await websocket.send_json(message.model_dump())
+        while True:
+            message = await queue.get()
+            await websocket.send_json(message)
 
-        # Simulation finished — close cleanly
-        await websocket.close()
-        logger.info("Run complete — run_id=%s", run_id)
+            # Close after terminal events
+            msg_type = message.get("type")
+            if msg_type in ("run_completed", "run_failed"):
+                await websocket.close()
+                break
 
     except WebSocketDisconnect:
         logger.info("Client disconnected — run_id=%s", run_id)
 
-    except Exception:
-        logger.exception("Error during run — run_id=%s", run_id)
-        try:
-            fail = RunFailedMessage(payload={"error": "Internal server error"})
-            await websocket.send_json(fail.model_dump())
-            await websocket.close(code=1011)
-        except Exception:
-            pass
+    finally:
+        event_bus.unsubscribe(run_id, queue)

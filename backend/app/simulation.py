@@ -35,7 +35,8 @@ def _now() -> str:
     return datetime.now(timezone.utc).isoformat()
 
 
-def _build_work_object() -> WorkObject:
+def build_demo_work_object() -> WorkObject:
+    """Build the demo ServiceNow work object. Public so the orchestrator can seed runs."""
     return WorkObject(
         work_id="INC-2024-08172",
         source_system="servicenow",
@@ -366,7 +367,7 @@ async def simulate_demo_run(run_id: str) -> AsyncGenerator[WebSocketMessage, Non
         tenant_id="tenant-acme-corp",
         status="running",
         started_at=_now(),
-        work_object=_build_work_object(),
+        work_object=build_demo_work_object(),
         skills=[],
     )
     yield RunStartedMessage(payload=agent_run)
@@ -392,5 +393,33 @@ async def simulate_demo_run(run_id: str) -> AsyncGenerator[WebSocketMessage, Non
         await asyncio.sleep(0.3)
 
     # 3. run_completed
+    await asyncio.sleep(0.5)
+    yield RunCompletedMessage()
+
+
+async def simulate_skill_events(run_id: str) -> AsyncGenerator[WebSocketMessage, None]:
+    """Yield only skill_update and run_completed messages (no run_started).
+
+    Used by the Orchestrator, which publishes run_started separately from
+    the RunManager's authoritative AgentRun.
+    """
+    await asyncio.sleep(0.8)
+
+    for skill_id, events in _SKILL_SCRIPTS:
+        for event_type, summary, confidence, metadata, delay in events:
+            await asyncio.sleep(delay)
+            event = AgentEvent(
+                run_id=run_id,
+                skill_id=skill_id,
+                event_type=event_type,  # type: ignore[arg-type]
+                summary=summary,
+                confidence=confidence,
+                timestamp=_now(),
+                metadata=metadata,
+            )
+            yield SkillUpdateMessage(payload=event)
+
+        await asyncio.sleep(0.3)
+
     await asyncio.sleep(0.5)
     yield RunCompletedMessage()

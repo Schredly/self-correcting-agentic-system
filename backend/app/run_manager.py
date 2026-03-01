@@ -16,8 +16,13 @@ class RunManager:
     def __init__(self) -> None:
         self.runs: dict[str, AgentRun] = {}
 
-    def create_run(self, work_object: WorkObject, tenant_id: str) -> AgentRun:
-        run_id = str(uuid.uuid4())
+    def create_run(
+        self,
+        work_object: WorkObject,
+        tenant_id: str,
+        run_id: str | None = None,
+    ) -> AgentRun:
+        run_id = run_id or str(uuid.uuid4())
         run = AgentRun(
             run_id=run_id,
             tenant_id=tenant_id,
@@ -28,6 +33,12 @@ class RunManager:
         )
         self.runs[run_id] = run
         return run
+
+    def mark_running(self, run_id: str) -> None:
+        run = self.runs.get(run_id)
+        if run is None:
+            return
+        self.runs[run_id] = run.model_copy(update={"status": "running"})
 
     def get_run(self, run_id: str) -> AgentRun | None:
         return self.runs.get(run_id)
