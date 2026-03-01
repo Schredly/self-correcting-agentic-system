@@ -1,4 +1,3 @@
-import { useState } from "react";
 import {
   BarChart,
   Bar,
@@ -13,10 +12,10 @@ import {
   PieChart,
   Pie,
 } from "recharts";
-import { TrendingUp, TrendingDown, Minus, Filter } from "lucide-react";
+import { TrendingUp, TrendingDown, Minus } from "lucide-react";
+import { PageHeader } from "../components/PageHeader";
 import { Card } from "../components/ui/card";
 import { Badge } from "../components/ui/badge";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "../components/ui/tabs";
 import { ScrollArea } from "../components/ui/scroll-area";
 
 // Mock data for accuracy by classification level
@@ -98,19 +97,21 @@ export default function EvaluationDashboard() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="h-16 border-b border-zinc-200 flex items-center justify-between px-8 bg-white">
-        <div>
-          <h2 className="font-semibold text-zinc-900">Evaluation Dashboard</h2>
-          <p className="text-xs text-zinc-500">Monitor agent performance and accuracy metrics</p>
-        </div>
-        <div className="flex items-center gap-3">
+      <PageHeader
+        title="Evaluation Dashboard"
+        description="Monitor agent performance and accuracy metrics"
+        breadcrumbs={[
+          { label: "Home", href: "/" },
+          { label: "Evaluation" },
+        ]}
+        actions={
           <select className="h-9 px-3 rounded-lg border border-zinc-200 text-sm text-zinc-700 bg-white">
             <option>Last 7 days</option>
             <option>Last 30 days</option>
             <option>Last 90 days</option>
           </select>
-        </div>
-      </div>
+        }
+      />
 
       {/* Content */}
       <ScrollArea className="flex-1 bg-zinc-50">

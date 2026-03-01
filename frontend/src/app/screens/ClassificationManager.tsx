@@ -1,18 +1,14 @@
 import { useState } from "react";
 import { DndProvider, useDrag, useDrop } from "react-dnd";
 import { HTML5Backend } from "react-dnd-html5-backend";
-import { motion } from "motion/react";
 import {
   GripVertical,
   Plus,
   Trash2,
   ChevronRight,
-  Settings2,
-  Eye,
-  EyeOff,
   ChevronDown,
-  ChevronUp,
 } from "lucide-react";
+import { PageHeader } from "../components/PageHeader";
 import { Button } from "../components/ui/button";
 import { Input } from "../components/ui/input";
 import { Badge } from "../components/ui/badge";
@@ -317,16 +313,21 @@ function ClassificationManagerContent() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="h-16 border-b border-zinc-200 flex items-center justify-between px-8 bg-white">
-        <div>
-          <h2 className="font-semibold text-zinc-900">Classification Schema Manager</h2>
-          <p className="text-xs text-zinc-500">Define dynamic multi-level taxonomy</p>
-        </div>
-        <Button onClick={addTopLevel}>
-          <Plus className="w-4 h-4 mr-2" />
-          Add Dimension
-        </Button>
-      </div>
+      <PageHeader
+        title="Classification Schema Manager"
+        description="Define dynamic multi-level taxonomy"
+        breadcrumbs={[
+          { label: "Home", href: "/" },
+          { label: "Admin" },
+          { label: "Classification" },
+        ]}
+        actions={
+          <Button onClick={addTopLevel}>
+            <Plus className="w-4 h-4 mr-2" />
+            Add Dimension
+          </Button>
+        }
+      />
 
       <div className="flex-1 flex overflow-hidden">
         {/* Left - Tree Editor */}

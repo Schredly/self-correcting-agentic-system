@@ -11,6 +11,7 @@ import {
   Zap,
 } from "lucide-react";
 import SkillDetailDrawer from "../components/SkillDetailDrawer";
+import { PageHeader } from "../components/PageHeader";
 import { Badge } from "../components/ui/badge";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { useAgentRun } from "../../hooks/useAgentRun";
@@ -203,7 +204,17 @@ export default function AgentConsole() {
   const workObject = run.work_object;
 
   return (
-    <div className="h-full flex">
+    <div className="h-full flex flex-col">
+      <PageHeader
+        title="Agent Console"
+        description="Monitor live agent activity and work object processing"
+        breadcrumbs={[
+          { label: "Home", href: "/" },
+          { label: "Agent Console" },
+        ]}
+      />
+
+      <div className="flex-1 flex overflow-hidden">
       {/* Left Panel - Work Object Summary */}
       <div className="w-[400px] border-r border-zinc-200 bg-white flex flex-col">
         <div className="p-6 border-b border-zinc-200">
@@ -357,6 +368,8 @@ export default function AgentConsole() {
             </div>
           </div>
         </ScrollArea>
+      </div>
+
       </div>
 
       {/* Skill Detail Drawer */}

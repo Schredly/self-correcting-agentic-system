@@ -8,6 +8,7 @@ import {
   RefreshCw,
   ExternalLink,
 } from "lucide-react";
+import { PageHeader } from "../components/PageHeader";
 import { Button } from "../components/ui/button";
 import { Badge } from "../components/ui/badge";
 import { ScrollArea } from "../components/ui/scroll-area";
@@ -209,16 +210,21 @@ export default function AdapterConfiguration() {
   return (
     <div className="h-full flex flex-col">
       {/* Header */}
-      <div className="h-16 border-b border-zinc-200 flex items-center justify-between px-8 bg-white">
-        <div>
-          <h2 className="font-semibold text-zinc-900">Adapter Configuration</h2>
-          <p className="text-xs text-zinc-500">Connect and configure external systems</p>
-        </div>
-        <Button>
-          <ExternalLink className="w-4 h-4 mr-2" />
-          Add Adapter
-        </Button>
-      </div>
+      <PageHeader
+        title="Adapter Configuration"
+        description="Connect and configure external systems"
+        breadcrumbs={[
+          { label: "Home", href: "/" },
+          { label: "Admin" },
+          { label: "Adapters" },
+        ]}
+        actions={
+          <Button>
+            <ExternalLink className="w-4 h-4 mr-2" />
+            Add Adapter
+          </Button>
+        }
+      />
 
       {/* Content */}
       <ScrollArea className="flex-1 bg-zinc-50">

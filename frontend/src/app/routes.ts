@@ -5,6 +5,8 @@ import ClassificationManager from "./screens/ClassificationManager";
 import KnowledgeAlignment from "./screens/KnowledgeAlignment";
 import AdapterConfiguration from "./screens/AdapterConfiguration";
 import EvaluationDashboard from "./screens/EvaluationDashboard";
+import TenantSetup from "./screens/TenantSetup";
+import ServiceNowConnector from "./screens/ServiceNowConnector";
 
 export const router = createBrowserRouter([
   {
@@ -16,6 +18,8 @@ export const router = createBrowserRouter([
       { path: "knowledge", Component: KnowledgeAlignment },
       { path: "adapters", Component: AdapterConfiguration },
       { path: "evaluation", Component: EvaluationDashboard },
+      { path: "tenant-setup", Component: TenantSetup },
+      { path: "connectors/servicenow", Component: ServiceNowConnector },
     ],
   },
 ]);
