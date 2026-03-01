@@ -1,6 +1,28 @@
 # Project Current Status
 
 ****
+**2026-03-01 19:00 UTC** — Add ServiceNow connector endpoints and classification discovery
+
+- `ecc21c1` — Add ServiceNow connector endpoints and classification discovery
+- **`backend/app/models.py`** (updated) — Added 3 new models:
+  - `ServiceNowConfig` — stores tenant_id, instance_url, username, api_key, connection_tested (bool), status (`not_configured`/`connected`/`error`), updated_at
+  - `DiscoveredDimension` — key, display_name, values (list of strings)
+  - `DiscoverClassificationResponse` — wraps `list[DiscoveredDimension]`
+- **`backend/app/tenant_config.py`** (updated) — Added ServiceNow config storage following Google Drive pattern:
+  - `servicenow_configs: dict[str, ServiceNowConfig]` in `__init__`
+  - `get_servicenow_config(tenant_id)` → `ServiceNowConfig | None`
+  - `upsert_servicenow_config(config)` → `None`
+  - `delete_tenant()` updated to clean up `servicenow_configs`
+- **`backend/pyproject.toml`** (updated) — Added `httpx>=0.27.0` dependency for async HTTP calls to ServiceNow
+- **`backend/app/main.py`** (updated) — Added 3 new endpoints + updated health:
+  - `GET /admin/{tenant_id}/connectors/servicenow` — returns stored config; 404 if tenant or config not found
+  - `PUT /admin/{tenant_id}/connectors/servicenow` — accepts `instance_url`, `username`, `api_key`; tests connection via `GET /api/now/table/sys_user?sysparm_limit=1`; saves config with `connection_tested=True`/status `connected` on success, status `error` on failure
+  - `POST /admin/{tenant_id}/connectors/servicenow/discover-classification` — validates tenant + config + connection_tested; queries `sys_choice` table for incident category/subcategory/priority fields (`sysparm_limit=500`); groups by `element`, returns `DiscoverClassificationResponse`; 400 if connection not tested, 502 on ServiceNow HTTP errors
+  - `get_tenant_health()` updated — `servicenow_connected` now reflects real config status instead of hardcoded `False`
+- **Verified** — `py_compile` passes on all 3 modified Python files
+****
+
+****
 **2026-03-01 18:00 UTC** — Refactor TenantSetup into health-driven 6-step onboarding wizard
 
 - `c352b3e` — Refactor TenantSetup into health-driven 6-step onboarding wizard
