@@ -1,3 +1,6 @@
+
+****************
+
 # Project Current Status
 
 ## What exists on disk (pushed to `origin/main`)
@@ -268,3 +271,6 @@ export interface AgentEvent {
 { "type": "run_completed" }
 { "type": "run_failed",   "payload": { "error": "..." } }
 ```
+
+*******************
+
