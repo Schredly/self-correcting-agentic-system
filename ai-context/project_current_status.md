@@ -1,6 +1,28 @@
 # Project Current Status
 
 ****
+**2026-03-01 11:00 UTC** — Drive scaffolding planner and provider interface
+
+- `4b020b1` — Add Drive scaffolding planner and provider interface
+- **`backend/app/drive_provider.py`** (new) — Two exports:
+  - `DriveNode` — Pydantic model with `kind` ("folder"|"file"), `name`, `parent_path`, optional `notes`. Represents one node in a scaffold plan.
+  - `DriveProvider` — `typing.Protocol` defining the abstract storage backend interface. Two async methods: `ensure_folder(name, parent_id) -> str` (idempotent create-or-reuse), `ensure_file(name, parent_id, content_type, content_bytes) -> str` (upload-or-overwrite). No concrete implementation yet (awaiting Google OAuth).
+- **`backend/app/drive_scaffolder.py`** (new) — `DriveScaffolder` class, takes `TenantConfigStore` at init:
+  - `build_scaffold_plan(tenant_id) -> list[DriveNode]` — loads tenant's `ClassificationSchema`, raises HTTP 404 if missing, returns deterministic folder plan:
+    - `AgenticKnowledge/` (top-level root)
+    - `AgenticKnowledge/{tenant_id}/` (tenant root)
+    - `AgenticKnowledge/{tenant_id}/_schema/` (schema metadata)
+    - `AgenticKnowledge/{tenant_id}/dimensions/` (classification dimensions)
+    - `AgenticKnowledge/{tenant_id}/dimensions/{level.display_name}/` (one per schema level)
+    - `AgenticKnowledge/{tenant_id}/documents/` (ingested documents)
+  - `apply_scaffold_plan(tenant_id, provider, root_folder_id) -> dict[str, str]` — fully implemented against `DriveProvider` protocol but not wired to any endpoint yet. Walks the plan in order, resolves parent IDs from accumulated folder_ids map, returns `path -> provider_id` mapping.
+- **`backend/app/main.py`** (updated) — Added `DriveScaffolder` import and module-level `drive_scaffolder` instance. Two new endpoints:
+  - `GET /admin/{tenant_id}/google-drive/scaffold-plan` — dry-run, returns JSON array of `DriveNode` dicts. Reuses `_validate_tenant_id()`. Returns 404 if no classification schema configured for tenant.
+  - `POST /admin/{tenant_id}/google-drive/scaffold-apply` — returns 501 Not Implemented with detail `"Google Drive auth/provider not configured yet"`. Reuses `_validate_tenant_id()`.
+- **No OAuth, no Google SDK, no frontend changes** — purely backend scaffolding layer.
+****
+
+****
 **2026-03-01 10:00 UTC** — Tenant admin configuration endpoints
 
 - `4e2fa07` — Add tenant-level admin configuration endpoints
@@ -78,6 +100,7 @@
   - `3e672d6` — Wire frontend to create runs via REST and subscribe with tenant_id
   - `9e63522` — Update project status doc with frontend REST + WebSocket wiring
   - `4e2fa07` — Add tenant-level admin configuration endpoints
+  - `4b020b1` — Add Drive scaffolding planner and provider interface
 
 ### Directory structure
 ```
@@ -89,7 +112,9 @@ self-correcting-agentic-system/
 │   └── app/
 │       ├── __init__.py
 │       ├── event_bus.py        # In-memory per-run EventBus with history replay
-│       ├── main.py             # FastAPI app + WebSocket (subscriber) + REST + admin endpoints + CORS
+│       ├── drive_provider.py    # DriveProvider protocol + DriveNode model
+│       ├── drive_scaffolder.py  # DriveScaffolder — builds folder plans from tenant schema
+│       ├── main.py             # FastAPI app + WebSocket (subscriber) + REST + admin + scaffold endpoints + CORS
 │       ├── models.py           # Pydantic models mirroring frontend TS types + admin config models
 │       ├── orchestrator.py     # Orchestrator — drives execution, publishes to EventBus
 │       ├── run_manager.py      # RunManager — in-memory run lifecycle (create, get, running, complete, fail)
@@ -277,7 +302,15 @@ export interface AgentEvent {
     - Google Drive status auto-derived from root_folder_id presence
     - All endpoints validate non-empty tenant_id (422), return 404 when config not found
     - Cross-tenant isolation: no data leakage between tenants
-16. **Frontend toolchain set up** (`128b0e9`):
+16. **Drive scaffolding planner and provider interface** (`4b020b1`):
+    - `DriveProvider` protocol — vendor-agnostic async interface (`ensure_folder`, `ensure_file`)
+    - `DriveNode` model — Pydantic model for scaffold plan nodes (kind, name, parent_path, notes)
+    - `DriveScaffolder` — loads tenant `ClassificationSchema`, builds deterministic folder tree plan
+    - Scaffold structure: `AgenticKnowledge/{tenant_id}/` with `_schema/`, `dimensions/{level}/`, `documents/`
+    - `apply_scaffold_plan()` implemented against protocol but not endpoint-wired (awaiting OAuth)
+    - `GET /admin/{tenant_id}/google-drive/scaffold-plan` — dry-run returns plan as JSON
+    - `POST /admin/{tenant_id}/google-drive/scaffold-apply` — returns 501 until Google auth configured
+17. **Frontend toolchain set up** (`128b0e9`):
    - `package.json` — 43 dependencies, scripts: `dev`, `build`, `preview`
    - `tsconfig.json` — strict mode, bundler resolution, `@/*` path alias, `noUncheckedIndexedAccess`
    - `vite.config.ts` — `@vitejs/plugin-react` + `@tailwindcss/vite`, `@/` alias, dev server on port 3000 with proxy to `localhost:8000` (API + WebSocket)
@@ -320,6 +353,9 @@ export interface AgentEvent {
 - **Tenant isolation enforced** — all run-scoped endpoints require `tenant_id`
 - **Demo simulation works end-to-end** — `POST /runs` triggers execution, WebSocket streams events with history replay
 - **Tenant admin config endpoints complete** — classification schema, adapter mappings, Google Drive config (GET + PUT each)
+- **Drive scaffolding planner complete** — `DriveProvider` protocol, `DriveScaffolder` builds deterministic folder plans, dry-run endpoint live
+- Next: implement concrete `GoogleDriveProvider` (OAuth + Drive SDK)
+- Next: wire `scaffold-apply` endpoint to real provider once OAuth is configured
 - Next: replace scripted simulation with real agent orchestration (LLM-driven skills)
 - Next: persistent storage (replace in-memory RunManager and TenantConfigStore)
 - Next: authentication layer (currently tenant_id is a query param, not token-derived)
@@ -391,6 +427,8 @@ export interface AgentEvent {
 | `PUT` | `/admin/{tenant_id}/adapter-mappings` | `{ source_system, record_type, mappings: AdapterFieldMapping[] }` | `AdapterMapping` | 200 / 422 |
 | `GET` | `/admin/{tenant_id}/google-drive` | — | `GoogleDriveConfig` | 200 / 404 / 422 |
 | `PUT` | `/admin/{tenant_id}/google-drive` | `{ root_folder_id?: string }` | `GoogleDriveConfig` | 200 / 422 |
+| `GET` | `/admin/{tenant_id}/google-drive/scaffold-plan` | — | `DriveNode[]` | 200 / 404 / 422 |
+| `POST` | `/admin/{tenant_id}/google-drive/scaffold-apply` | — | — | 501 (not implemented) |
 
 ### WebSocket message envelope (expected from backend)
 ```json
