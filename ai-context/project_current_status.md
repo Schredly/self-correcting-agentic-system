@@ -1,6 +1,25 @@
 # Project Current Status
 
 ****
+**2026-03-01 14:00 UTC** — Wire TenantSelector to backend with dynamic tenant context
+
+- `f9c61b7` — Wire TenantSelector to backend with dynamic tenant context
+- **`backend/app/tenant_config.py`** (updated) — Added tenant registry to `TenantConfigStore`: `self.tenants: dict[str, str]` (tenant_id → display_name), `register_tenant(tenant_id, name)`, `list_tenants() -> dict[str, str]`
+- **`backend/app/models.py`** (updated) — Added `TenantSummary` Pydantic model: `id: str`, `name: str`, `status: Literal["configured", "needs-setup"]`
+- **`backend/app/main.py`** (updated) — 5 demo tenants registered in lifespan (demo-tenant, acme-corp, globex, wayne-ent, stark-ind). New `GET /tenants` endpoint derives status: "configured" only when both classification schema AND Google Drive config exist with `status="configured"`, otherwise "needs-setup".
+- **`frontend/vite.config.ts`** (updated) — Added `/tenants` proxy entry to `http://localhost:8000`
+- **`frontend/src/lib/api.ts`** (updated) — Added exported `Tenant` interface and `fetchTenants()` helper (same fetch pattern as `createRun()`)
+- **`frontend/src/app/context/TenantContext.tsx`** (new) — React Context for tenant state:
+  - `TenantProvider`: fetches tenants on mount via `fetchTenants()`, auto-selects "demo-tenant" (falls back to first tenant)
+  - `useTenant()` hook: exposes `{ tenants, selectedTenant, setSelectedTenant, loading, error }`
+- **`frontend/src/app/components/Layout.tsx`** (updated) — Wrapped entire layout in `<TenantProvider>` so all child components can access tenant context
+- **`frontend/src/app/components/TenantSelector.tsx`** (updated) — Removed local `Tenant` interface and `mockTenants` array. Now uses `useTenant()` for tenants list and selection. Shows `<Loader2>` spinner with "Loading..." during fetch. Returns `null` if no tenant selected.
+- **`frontend/src/app/screens/AgentConsole.tsx`** (updated) — Removed hardcoded `const TENANT_ID = "demo-tenant"`. Gets `tenantId` from `useTenant()` context. Resets `runId` and `error` state when tenant changes. `tenantId` added to useEffect dependency array so switching tenants creates a new run.
+- **Data flow**: Backend lifespan → register 5 tenants → `GET /tenants` derives status → `TenantProvider` fetches on mount → auto-selects "demo-tenant" → `TenantSelector` reads from context → `AgentConsole` creates run for selected tenant → switching tenants resets and creates new run
+- **Build verified** — `npx tsc --noEmit` and `npx vite build` pass (no new errors; pre-existing errors in calendar.tsx and ClassificationManager.tsx unchanged)
+****
+
+****
 **2026-03-01 13:00 UTC** — Figma UI redesign incorporation
 
 - `f6f7d5f` — Incorporate Figma UI redesign with new layout, screens, and components
@@ -183,6 +202,7 @@
   - `ca7c192` — Implement GoogleDriveProvider and wire scaffold-apply endpoint
   - `fba4631` — Add tests for GoogleDriveProvider with mocked Drive API
   - `f6f7d5f` — Incorporate Figma UI redesign with new layout, screens, and components
+  - `f9c61b7` — Wire TenantSelector to backend with dynamic tenant context
 
 ### Directory structure
 ```
@@ -203,17 +223,17 @@ self-correcting-agentic-system/
 │       ├── drive_scaffolder.py  # DriveScaffolder — builds folder plans from tenant schema
 │       ├── google_drive_provider.py  # GoogleDriveProvider — Drive v3 + service account + Shared Drive
 │       ├── main.py             # FastAPI app + WebSocket (subscriber) + REST + admin + scaffold endpoints + CORS
-│       ├── models.py           # Pydantic models mirroring frontend TS types + admin config + ScaffoldApplyRequest
+│       ├── models.py           # Pydantic models mirroring frontend TS types + admin config + TenantSummary + ScaffoldApplyRequest
 │       ├── orchestrator.py     # Orchestrator — drives execution, publishes to EventBus
 │       ├── run_manager.py      # RunManager — in-memory run lifecycle (create, get, running, complete, fail)
 │       ├── simulation.py       # Async generators for timed demo events (~25s)
-│       └── tenant_config.py    # TenantConfigStore — in-memory per-tenant admin config + list_adapter_mappings
+│       └── tenant_config.py    # TenantConfigStore — in-memory per-tenant admin config + tenant registry + list_adapter_mappings
 └── frontend/
     ├── index.html              # Vite entry HTML
     ├── package.json            # 43 deps, scripts: dev/build/preview
     ├── package-lock.json
     ├── tsconfig.json           # strict mode, @/* path alias
-    ├── vite.config.ts          # React + Tailwind v4 plugins, dev proxy to :8000
+    ├── vite.config.ts          # React + Tailwind v4 plugins, dev proxy to :8000 (/api, /tenants, /runs)
     └── src/
         ├── main.tsx            # React root mount + CSS import
         ├── types/
@@ -221,14 +241,16 @@ self-correcting-agentic-system/
         ├── state/
         │   └── agentReducer.ts # reducer for AgentRun state (run_started, skill_update, run_completed, run_failed)
         ├── lib/
-        │   └── api.ts          # createRun() fetch helper (POST /runs via Vite proxy)
+        │   └── api.ts          # Tenant type + fetchTenants(), createRun() fetch helpers (via Vite proxy)
         ├── hooks/
         │   └── useAgentRun.ts  # WebSocket hook with tenant_id, nullable runId, reconnect
         ├── app/
         │   ├── App.tsx
         │   ├── routes.ts
+        │   ├── context/
+        │   │   └── TenantContext.tsx         # TenantProvider + useTenant() hook (fetches from backend)
         │   ├── screens/
-        │   │   ├── AgentConsole.tsx          # live data via useAgentRun + PageHeader (no mock data)
+        │   │   ├── AgentConsole.tsx          # live data via useAgentRun + dynamic tenant from context
         │   │   ├── EvaluationDashboard.tsx   # PageHeader + recharts (mock data)
         │   │   ├── AdapterConfiguration.tsx  # PageHeader (mock data)
         │   │   ├── ClassificationManager.tsx # PageHeader + react-dnd tree (mock data)
@@ -236,9 +258,9 @@ self-correcting-agentic-system/
         │   │   ├── TenantSetup.tsx           # 7-step setup wizard (mock data)
         │   │   └── ServiceNowConnector.tsx   # connector config + test console (mock data)
         │   └── components/
-        │       ├── Layout.tsx               # top bar + collapsible sidebar + nested admin nav
+        │       ├── Layout.tsx               # top bar + collapsible sidebar + nested admin nav + TenantProvider
         │       ├── PageHeader.tsx            # reusable header with breadcrumbs + actions slot
-        │       ├── TenantSelector.tsx        # dropdown tenant picker with search + status
+        │       ├── TenantSelector.tsx        # dropdown tenant picker with search + status (wired to backend)
         │       ├── SkillDetailDrawer.tsx     # uses canonical SkillExecution type
         │       ├── figma/
         │       │   └── ImageWithFallback.tsx
@@ -421,7 +443,16 @@ export interface AgentEvent {
     - `AgentConsole.tsx` merged: added PageHeader while preserving all live WebSocket data wiring
     - `SkillDetailDrawer.tsx` unchanged (kept canonical SkillExecution types over Figma mock types)
     - Build verified: 2826 modules, 332 KB gzipped
-20. **Frontend toolchain set up** (`128b0e9`):
+20. **TenantSelector wired to backend** (`f9c61b7`):
+    - `TenantConfigStore` extended with tenant registry (`tenants` dict, `register_tenant`, `list_tenants`)
+    - `TenantSummary` model added — `id`, `name`, `status` (configured/needs-setup)
+    - `GET /tenants` endpoint derives status from schema + drive config presence
+    - 5 demo tenants seeded at startup (demo-tenant, acme-corp, globex, wayne-ent, stark-ind)
+    - `TenantContext.tsx` — React Context with `TenantProvider` (fetches on mount, auto-selects "demo-tenant") and `useTenant()` hook
+    - `TenantSelector` now reads from context instead of mock data, shows loading state
+    - `AgentConsole` uses dynamic `tenantId` from context — switching tenants resets state and creates a new run
+    - `/tenants` proxy added to Vite config, `fetchTenants()` helper added to `api.ts`
+21. **Frontend toolchain set up** (`128b0e9`):
    - `package.json` — 43 dependencies, scripts: `dev`, `build`, `preview`
    - `tsconfig.json` — strict mode, bundler resolution, `@/*` path alias, `noUncheckedIndexedAccess`
    - `vite.config.ts` — `@vitejs/plugin-react` + `@tailwindcss/vite`, `@/` alias, dev server on port 3000 with proxy to `localhost:8000` (API + WebSocket)
@@ -477,8 +508,8 @@ export interface AgentEvent {
 - **Frontend fully wired** — creates runs via REST, subscribes with tenant_id
 - Each page load creates a fresh run (no hardcoded run_id)
 - **Figma UI redesign incorporated** — new Layout with top bar + collapsible sidebar, PageHeader on all screens, TenantSelector, 2 new screens (TenantSetup, ServiceNowConnector)
+- **TenantSelector wired to backend** — fetches tenants from `GET /tenants`, propagates selection via React Context, AgentConsole resets on tenant switch
 - Next: make work object configurable (currently hardcoded demo data in AgentConsole)
-- Next: wire TenantSelector to backend (currently uses mock tenant list)
 - Next: wire TenantSetup wizard steps to admin endpoints
 - Next: wire ServiceNowConnector to real ServiceNow API
 - Next: wire ClassificationManager to classification-schema endpoints
@@ -539,6 +570,7 @@ export interface AgentEvent {
 | Method | Path | Request body | Response | Status |
 |--------|------|-------------|----------|--------|
 | `GET` | `/health` | — | `{ "status": "ok" }` | 200 |
+| `GET` | `/tenants` | — | `TenantSummary[]` (`{ id, name, status }`) | 200 |
 | `POST` | `/runs` | `{ "tenant_id": string, "work_object": WorkObject }` | `{ "run_id": string, "status": "queued", "tenant_id": string }` | 201 |
 | `GET` | `/runs/{run_id}?tenant_id=` | — | `AgentRun` (full object) | 200 / 404 / 422 |
 | `GET` | `/admin/{tenant_id}/classification-schema` | — | `ClassificationSchema` | 200 / 404 / 422 |
