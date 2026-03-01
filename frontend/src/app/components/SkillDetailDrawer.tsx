@@ -1,6 +1,5 @@
 import { motion } from "motion/react";
 import { X, ArrowRight, Database, FileText, Wrench, TrendingUp } from "lucide-react";
-import { Badge } from "./ui/badge";
 import { ScrollArea } from "./ui/scroll-area";
 import type { SkillExecution } from "../../types/agents";
 
