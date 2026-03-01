@@ -20,13 +20,14 @@ from .models import (
     ClassificationSchema,
     GoogleDriveConfig,
     ScaffoldApplyRequest,
+    Tenant,
+    TenantCreateRequest,
     TenantHealth,
     TenantSummary,
     WorkObject,
 )
 from .orchestrator import Orchestrator
 from .run_manager import RunManager
-from .simulation import build_demo_work_object
 from .tenant_config import TenantConfigStore
 
 logging.basicConfig(level=logging.INFO)
@@ -38,32 +39,9 @@ orchestrator = Orchestrator(run_manager, event_bus)
 tenant_config = TenantConfigStore()
 drive_scaffolder = DriveScaffolder(tenant_config)
 
-DEMO_RUN_ID = "demo-run-1"
-DEMO_TENANT_ID = "demo-tenant"
-
-
-DEMO_TENANTS = {
-    "demo-tenant": "Demo Tenant",
-    "acme-corp": "Acme Corporation",
-    "globex": "Globex Industries",
-    "wayne-ent": "Wayne Enterprises",
-    "stark-ind": "Stark Industries",
-}
-
-
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ARG001
-    """Seed demo tenants and start the demo run so the frontend works out of the box."""
-    for tid, name in DEMO_TENANTS.items():
-        tenant_config.register_tenant(tid, name)
-
-    run_manager.create_run(
-        work_object=build_demo_work_object(),
-        tenant_id=DEMO_TENANT_ID,
-        run_id=DEMO_RUN_ID,
-    )
-    orchestrator.start_run(DEMO_RUN_ID)
-    logger.info("Demo run seeded and started — run_id=%s, tenant_id=%s", DEMO_RUN_ID, DEMO_TENANT_ID)
+    """Application lifespan handler."""
     yield
 
 
@@ -96,20 +74,51 @@ async def health() -> dict[str, str]:
     return {"status": "ok"}
 
 
+@app.post("/tenants", status_code=201)
+async def create_tenant(body: TenantCreateRequest) -> Tenant:
+    tenant = Tenant(
+        id=body.id,
+        name=body.name,
+        enabled_adapters=body.enabled_adapters,
+        created_at=datetime.now(timezone.utc),
+    )
+    try:
+        tenant_config.create_tenant(tenant)
+    except ValueError:
+        raise HTTPException(status_code=409, detail="Tenant already exists")
+    logger.info("Tenant created — tenant_id=%s", tenant.id)
+    return tenant
+
+
 @app.get("/tenants")
 async def list_tenants() -> list[TenantSummary]:
     tenants = tenant_config.list_tenants()
     result: list[TenantSummary] = []
-    for tid, name in tenants.items():
-        schema = tenant_config.get_schema(tid)
-        drive = tenant_config.get_drive_config(tid)
+    for t in tenants:
+        schema = tenant_config.get_schema(t.id)
+        drive = tenant_config.get_drive_config(t.id)
         configured = schema is not None and drive is not None and drive.status == "configured"
         result.append(TenantSummary(
-            id=tid,
-            name=name,
+            id=t.id,
+            name=t.name,
             status="configured" if configured else "needs-setup",
         ))
     return result
+
+
+@app.get("/tenants/{tenant_id}")
+async def get_tenant(tenant_id: str) -> Tenant:
+    tenant = tenant_config.get_tenant(tenant_id)
+    if tenant is None:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    return tenant
+
+
+@app.delete("/tenants/{tenant_id}", status_code=204)
+async def delete_tenant(tenant_id: str) -> None:
+    if not tenant_config.delete_tenant(tenant_id):
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    logger.info("Tenant deleted — tenant_id=%s", tenant_id)
 
 
 @app.post("/runs", status_code=201)
@@ -179,7 +188,7 @@ def _validate_tenant_id(tenant_id: str) -> None:
 @app.get("/admin/{tenant_id}/health")
 async def get_tenant_health(tenant_id: str) -> TenantHealth:
     _validate_tenant_id(tenant_id)
-    if tenant_id not in tenant_config.list_tenants():
+    if tenant_config.get_tenant(tenant_id) is None:
         raise HTTPException(status_code=404, detail="Tenant not found")
 
     schema = tenant_config.get_schema(tenant_id)

@@ -1,6 +1,25 @@
 # Project Current Status
 
 ****
+**2026-03-01 15:00 UTC** — Tenant health endpoint + TenantOnboarding screen
+
+- `e68bf02` — Add GET /admin/{tenant_id}/health endpoint for tenant setup checklist
+- `409b37d` — Add TenantOnboarding screen with 7-step wizard from Figma UI update
+- **`backend/app/models.py`** (updated) — Added `TenantHealth` Pydantic model: `tenant_id`, `schema_defined`, `drive_configured`, `drive_scaffold_applied`, `knowledge_synced`, `servicenow_connected`, `adapter_mapping_defined`, `last_run_status`
+- **`backend/app/run_manager.py`** (updated) — Added `last_run_for_tenant(tenant_id)` method: filters runs by tenant, returns the one with the latest `started_at`
+- **`backend/app/main.py`** (updated) — New `GET /admin/{tenant_id}/health` endpoint: derives all health booleans from existing stores (schema, drive config, adapter mappings, run history). Returns 404 for unregistered tenants. `knowledge_synced` and `servicenow_connected` are placeholders (always `false`), `drive_scaffold_applied` mirrors `drive_configured` (refinable later).
+- **`frontend/src/app/screens/TenantOnboarding.tsx`** (new) — 7-step onboarding wizard (740 lines):
+  - Steps: Choose Source System, Connect System, Discover Classification, Connect Google Drive, Apply Folder Structure, Sync Knowledge, Activate
+  - `HorizontalStepper` component with progress connector bars and step status icons
+  - Accordion-style step expansion with motion/react animations
+  - Step 1: grid of ServiceNow/Jira/Salesforce cards; Step 2: connection form + test results panel; Step 3: editable classification tree with checkboxes; Step 4: OAuth-style Drive connection; Step 5: folder preview + apply; Step 6: document sync with stats; Step 7: summary card + activation button
+  - Cleaned up unused imports from Figma export (AlertCircle, PageHeader, Icon vars, setSteps, setTenantStatus)
+- **`frontend/src/app/routes.ts`** (updated) — Added `TenantOnboarding` import and `/tenant-onboarding` route
+- **`frontend/src/app/components/Layout.tsx`** (updated) — Added `Workflow` icon import and "Tenant Onboarding" nav item in sidebar
+- **Build verified** — `npx tsc --noEmit` and `npx vite build` pass (no new errors)
+****
+
+****
 **2026-03-01 14:00 UTC** — Wire TenantSelector to backend with dynamic tenant context
 
 - `f9c61b7` — Wire TenantSelector to backend with dynamic tenant context
@@ -203,6 +222,9 @@
   - `fba4631` — Add tests for GoogleDriveProvider with mocked Drive API
   - `f6f7d5f` — Incorporate Figma UI redesign with new layout, screens, and components
   - `f9c61b7` — Wire TenantSelector to backend with dynamic tenant context
+  - `9424bb9` — Update project status doc with TenantSelector wiring details
+  - `e68bf02` — Add GET /admin/{tenant_id}/health endpoint for tenant setup checklist
+  - `409b37d` — Add TenantOnboarding screen with 7-step wizard from Figma UI update
 
 ### Directory structure
 ```
@@ -222,10 +244,10 @@ self-correcting-agentic-system/
 │       ├── drive_provider.py    # DriveProvider protocol + DriveNode model
 │       ├── drive_scaffolder.py  # DriveScaffolder — builds folder plans from tenant schema
 │       ├── google_drive_provider.py  # GoogleDriveProvider — Drive v3 + service account + Shared Drive
-│       ├── main.py             # FastAPI app + WebSocket (subscriber) + REST + admin + scaffold endpoints + CORS
-│       ├── models.py           # Pydantic models mirroring frontend TS types + admin config + TenantSummary + ScaffoldApplyRequest
+│       ├── main.py             # FastAPI app + WebSocket (subscriber) + REST + admin + health + scaffold endpoints + CORS
+│       ├── models.py           # Pydantic models mirroring frontend TS types + admin config + TenantSummary + TenantHealth + ScaffoldApplyRequest
 │       ├── orchestrator.py     # Orchestrator — drives execution, publishes to EventBus
-│       ├── run_manager.py      # RunManager — in-memory run lifecycle (create, get, running, complete, fail)
+│       ├── run_manager.py      # RunManager — in-memory run lifecycle (create, get, running, complete, fail, last_run_for_tenant)
 │       ├── simulation.py       # Async generators for timed demo events (~25s)
 │       └── tenant_config.py    # TenantConfigStore — in-memory per-tenant admin config + tenant registry + list_adapter_mappings
 └── frontend/
@@ -256,6 +278,7 @@ self-correcting-agentic-system/
         │   │   ├── ClassificationManager.tsx # PageHeader + react-dnd tree (mock data)
         │   │   ├── KnowledgeAlignment.tsx    # document table + detail panel (mock data)
         │   │   ├── TenantSetup.tsx           # 7-step setup wizard (mock data)
+        │   │   ├── TenantOnboarding.tsx     # 7-step onboarding wizard with stepper + accordion (mock data)
         │   │   └── ServiceNowConnector.tsx   # connector config + test console (mock data)
         │   └── components/
         │       ├── Layout.tsx               # top bar + collapsible sidebar + nested admin nav + TenantProvider
@@ -452,7 +475,17 @@ export interface AgentEvent {
     - `TenantSelector` now reads from context instead of mock data, shows loading state
     - `AgentConsole` uses dynamic `tenantId` from context — switching tenants resets state and creates a new run
     - `/tenants` proxy added to Vite config, `fetchTenants()` helper added to `api.ts`
-21. **Frontend toolchain set up** (`128b0e9`):
+21. **Tenant health endpoint** (`e68bf02`):
+    - `TenantHealth` model — 8 fields: schema_defined, drive_configured, drive_scaffold_applied, knowledge_synced, servicenow_connected, adapter_mapping_defined, last_run_status
+    - `RunManager.last_run_for_tenant()` — finds most recent run by `started_at`
+    - `GET /admin/{tenant_id}/health` — derives booleans from existing stores, 404 for unregistered tenants
+    - Placeholders: `knowledge_synced=false`, `servicenow_connected=false`, `drive_scaffold_applied` mirrors `drive_configured`
+22. **TenantOnboarding screen** (`409b37d`):
+    - 7-step onboarding wizard: Choose Source, Connect System, Discover Classification, Connect Drive, Apply Folders, Sync Knowledge, Activate
+    - HorizontalStepper with progress bars, accordion step expansion with motion/react animations
+    - Added `/tenant-onboarding` route, "Tenant Onboarding" sidebar nav item with Workflow icon
+    - All mock data — not yet wired to backend endpoints
+23. **Frontend toolchain set up** (`128b0e9`):
    - `package.json` — 43 dependencies, scripts: `dev`, `build`, `preview`
    - `tsconfig.json` — strict mode, bundler resolution, `@/*` path alias, `noUncheckedIndexedAccess`
    - `vite.config.ts` — `@vitejs/plugin-react` + `@tailwindcss/vite`, `@/` alias, dev server on port 3000 with proxy to `localhost:8000` (API + WebSocket)
@@ -499,6 +532,7 @@ export interface AgentEvent {
 - **Tenant admin config endpoints complete** — classification schema, adapter mappings, Google Drive config (GET + PUT each)
 - **Drive scaffolding planner complete** — `DriveProvider` protocol, `DriveScaffolder` builds deterministic folder plans, dry-run endpoint live
 - **GoogleDriveProvider complete** — concrete Drive v3 implementation with service account auth, Shared Drive support, scaffold-apply fully wired
+- **Tenant health endpoint** — `GET /admin/{tenant_id}/health` derives setup checklist from stores + run history
 - Next: replace scripted simulation with real agent orchestration (LLM-driven skills)
 - Next: persistent storage (replace in-memory RunManager and TenantConfigStore)
 - Next: authentication layer (currently tenant_id is a query param, not token-derived)
@@ -509,6 +543,8 @@ export interface AgentEvent {
 - Each page load creates a fresh run (no hardcoded run_id)
 - **Figma UI redesign incorporated** — new Layout with top bar + collapsible sidebar, PageHeader on all screens, TenantSelector, 2 new screens (TenantSetup, ServiceNowConnector)
 - **TenantSelector wired to backend** — fetches tenants from `GET /tenants`, propagates selection via React Context, AgentConsole resets on tenant switch
+- **TenantOnboarding screen added** — 7-step wizard with stepper + accordion (mock data, not yet wired to backend)
+- Next: wire TenantOnboarding steps to backend endpoints (health, classification schema, drive, adapters)
 - Next: make work object configurable (currently hardcoded demo data in AgentConsole)
 - Next: wire TenantSetup wizard steps to admin endpoints
 - Next: wire ServiceNowConnector to real ServiceNow API
@@ -522,6 +558,7 @@ export interface AgentEvent {
 - `KnowledgeAlignment.tsx` — document table with sync status, detail panel with metadata/labels/schema alignment
 - `TenantSetup.tsx` — 7-step wizard (schema → drive → scaffold → sync → servicenow → mapping → e2e test), health summary card
 - `ServiceNowConnector.tsx` — connection form, test operations, terminal-style log console
+- `TenantOnboarding.tsx` — 7-step onboarding wizard: source system selection, connection, classification discovery, Drive, folders, sync, activation
 
 ### Pre-existing TS errors (remaining after Figma cleanup)
 - `ClassificationManager.tsx` — react-dnd ref type mismatch (needs react-dnd upgrade), unused `setFieldMapping`
@@ -571,6 +608,7 @@ export interface AgentEvent {
 |--------|------|-------------|----------|--------|
 | `GET` | `/health` | — | `{ "status": "ok" }` | 200 |
 | `GET` | `/tenants` | — | `TenantSummary[]` (`{ id, name, status }`) | 200 |
+| `GET` | `/admin/{tenant_id}/health` | — | `TenantHealth` (7 booleans + `last_run_status`) | 200 / 404 / 422 |
 | `POST` | `/runs` | `{ "tenant_id": string, "work_object": WorkObject }` | `{ "run_id": string, "status": "queued", "tenant_id": string }` | 201 |
 | `GET` | `/runs/{run_id}?tenant_id=` | — | `AgentRun` (full object) | 200 / 404 / 422 |
 | `GET` | `/admin/{tenant_id}/classification-schema` | — | `ClassificationSchema` | 200 / 404 / 422 |

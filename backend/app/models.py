@@ -133,6 +133,20 @@ class GoogleDriveConfig(BaseModel):
     updated_at: datetime
 
 
+class Tenant(BaseModel):
+    id: str
+    name: str
+    enabled_adapters: list[str] = []
+    status: Literal["draft", "active"] = "draft"
+    created_at: datetime
+
+
+class TenantCreateRequest(BaseModel):
+    id: str
+    name: str
+    enabled_adapters: list[str] = []
+
+
 class TenantSummary(BaseModel):
     id: str
     name: str

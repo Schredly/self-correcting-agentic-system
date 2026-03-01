@@ -1,28 +1,46 @@
 """In-memory tenant configuration store.
 
-Manages classification schemas, adapter field mappings, and Google Drive
-configs on a per-tenant basis.
+Manages tenants, classification schemas, adapter field mappings, and Google
+Drive configs on a per-tenant basis.
 """
 
 from __future__ import annotations
 
-from .models import AdapterMapping, ClassificationSchema, GoogleDriveConfig
+from .models import AdapterMapping, ClassificationSchema, GoogleDriveConfig, Tenant
 
 
 class TenantConfigStore:
     def __init__(self) -> None:
-        self.tenants: dict[str, str] = {}  # tenant_id → display_name
+        self.tenants: dict[str, Tenant] = {}
         self.schemas: dict[str, ClassificationSchema] = {}
         self.adapter_mappings: dict[tuple[str, str, str], AdapterMapping] = {}
         self.drive_configs: dict[str, GoogleDriveConfig] = {}
 
-    # ── Tenant registry ───────────────────────────────────────────────────
+    # ── Tenant CRUD ───────────────────────────────────────────────────────
 
-    def register_tenant(self, tenant_id: str, name: str) -> None:
-        self.tenants[tenant_id] = name
+    def create_tenant(self, tenant: Tenant) -> Tenant:
+        if tenant.id in self.tenants:
+            raise ValueError(f"Tenant already exists: {tenant.id}")
+        self.tenants[tenant.id] = tenant
+        return tenant
 
-    def list_tenants(self) -> dict[str, str]:
-        return dict(self.tenants)
+    def get_tenant(self, tenant_id: str) -> Tenant | None:
+        return self.tenants.get(tenant_id)
+
+    def list_tenants(self) -> list[Tenant]:
+        return list(self.tenants.values())
+
+    def delete_tenant(self, tenant_id: str) -> bool:
+        if tenant_id not in self.tenants:
+            return False
+        del self.tenants[tenant_id]
+        # Clean up related config
+        self.schemas.pop(tenant_id, None)
+        self.drive_configs.pop(tenant_id, None)
+        keys_to_remove = [k for k in self.adapter_mappings if k[0] == tenant_id]
+        for key in keys_to_remove:
+            del self.adapter_mappings[key]
+        return True
 
     # ── Classification schema ────────────────────────────────────────────
 
