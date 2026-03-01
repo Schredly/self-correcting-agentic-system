@@ -133,6 +133,12 @@ class GoogleDriveConfig(BaseModel):
     updated_at: datetime
 
 
+class TenantSummary(BaseModel):
+    id: str
+    name: str
+    status: Literal["configured", "needs-setup"]
+
+
 class ScaffoldApplyRequest(BaseModel):
     root_folder_id: str | None = None
     shared_drive_id: str | None = None

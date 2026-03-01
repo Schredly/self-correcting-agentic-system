@@ -16,9 +16,8 @@ import { Badge } from "../components/ui/badge";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { useAgentRun } from "../../hooks/useAgentRun";
 import { createRun } from "../../lib/api";
+import { useTenant } from "../context/TenantContext";
 import type { SkillExecution, WorkObject } from "../../types/agents";
-
-const TENANT_ID = "demo-tenant";
 
 const DEMO_WORK_OBJECT: WorkObject = {
   work_id: "INC-2024-08172",
@@ -149,15 +148,23 @@ function SkillCard({ skill, onClick }: { skill: SkillExecution; onClick: () => v
 }
 
 export default function AgentConsole() {
+  const { selectedTenant } = useTenant();
+  const tenantId = selectedTenant?.id ?? "";
+
   const [runId, setRunId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const { run, status } = useAgentRun(runId, TENANT_ID);
+  const { run, status } = useAgentRun(runId, tenantId);
   const [selectedSkill, setSelectedSkill] = useState<SkillExecution | null>(null);
 
   useEffect(() => {
+    if (!tenantId) return;
+
+    setRunId(null);
+    setError(null);
+
     let cancelled = false;
 
-    createRun({ tenant_id: TENANT_ID, work_object: DEMO_WORK_OBJECT })
+    createRun({ tenant_id: tenantId, work_object: DEMO_WORK_OBJECT })
       .then((res) => {
         if (!cancelled) setRunId(res.run_id);
       })
@@ -168,7 +175,7 @@ export default function AgentConsole() {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [tenantId]);
 
   if (error) {
     return (

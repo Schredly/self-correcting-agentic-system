@@ -16,6 +16,7 @@ import {
   Cable,
 } from "lucide-react";
 import { TenantSelector } from "./TenantSelector";
+import { TenantProvider } from "../context/TenantContext";
 import { Badge } from "./ui/badge";
 import { Avatar, AvatarFallback } from "./ui/avatar";
 import { Button } from "./ui/button";
@@ -56,6 +57,7 @@ export default function Layout() {
   };
 
   return (
+    <TenantProvider>
     <div className="flex h-screen bg-zinc-50 flex-col">
       {/* Top App Bar */}
       <header className="h-14 bg-white border-b border-zinc-200 flex items-center justify-between px-6 flex-shrink-0">
@@ -219,5 +221,6 @@ export default function Layout() {
         </main>
       </div>
     </div>
+    </TenantProvider>
   );
 }

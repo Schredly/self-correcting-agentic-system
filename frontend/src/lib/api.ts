@@ -1,5 +1,26 @@
 import type { WorkObject } from "../types/agents";
 
+// ── Tenant types ─────────────────────────────────────────────────────────────
+
+export interface Tenant {
+  id: string;
+  name: string;
+  status: "configured" | "needs-setup";
+}
+
+export async function fetchTenants(): Promise<Tenant[]> {
+  const res = await fetch("/tenants");
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`GET /tenants failed (${res.status}): ${text}`);
+  }
+
+  return res.json() as Promise<Tenant[]>;
+}
+
+// ── Run types ────────────────────────────────────────────────────────────────
+
 interface CreateRunParams {
   tenant_id: string;
   work_object: WorkObject;

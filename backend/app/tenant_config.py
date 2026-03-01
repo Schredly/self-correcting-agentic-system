@@ -11,9 +11,18 @@ from .models import AdapterMapping, ClassificationSchema, GoogleDriveConfig
 
 class TenantConfigStore:
     def __init__(self) -> None:
+        self.tenants: dict[str, str] = {}  # tenant_id → display_name
         self.schemas: dict[str, ClassificationSchema] = {}
         self.adapter_mappings: dict[tuple[str, str, str], AdapterMapping] = {}
         self.drive_configs: dict[str, GoogleDriveConfig] = {}
+
+    # ── Tenant registry ───────────────────────────────────────────────────
+
+    def register_tenant(self, tenant_id: str, name: str) -> None:
+        self.tenants[tenant_id] = name
+
+    def list_tenants(self) -> dict[str, str]:
+        return dict(self.tenants)
 
     # ── Classification schema ────────────────────────────────────────────
 

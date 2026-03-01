@@ -14,6 +14,7 @@ export default defineConfig({
     port: 3000,
     proxy: {
       "/api": "http://localhost:8000",
+      "/tenants": "http://localhost:8000",
       "/runs": {
         target: "ws://localhost:8000",
         ws: true,

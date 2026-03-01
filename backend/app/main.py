@@ -20,6 +20,7 @@ from .models import (
     ClassificationSchema,
     GoogleDriveConfig,
     ScaffoldApplyRequest,
+    TenantSummary,
     WorkObject,
 )
 from .orchestrator import Orchestrator
@@ -40,9 +41,21 @@ DEMO_RUN_ID = "demo-run-1"
 DEMO_TENANT_ID = "demo-tenant"
 
 
+DEMO_TENANTS = {
+    "demo-tenant": "Demo Tenant",
+    "acme-corp": "Acme Corporation",
+    "globex": "Globex Industries",
+    "wayne-ent": "Wayne Enterprises",
+    "stark-ind": "Stark Industries",
+}
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):  # noqa: ARG001
-    """Seed and start the demo run so the frontend works out of the box."""
+    """Seed demo tenants and start the demo run so the frontend works out of the box."""
+    for tid, name in DEMO_TENANTS.items():
+        tenant_config.register_tenant(tid, name)
+
     run_manager.create_run(
         work_object=build_demo_work_object(),
         tenant_id=DEMO_TENANT_ID,
@@ -80,6 +93,22 @@ class CreateRunResponse(BaseModel):
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.get("/tenants")
+async def list_tenants() -> list[TenantSummary]:
+    tenants = tenant_config.list_tenants()
+    result: list[TenantSummary] = []
+    for tid, name in tenants.items():
+        schema = tenant_config.get_schema(tid)
+        drive = tenant_config.get_drive_config(tid)
+        configured = schema is not None and drive is not None and drive.status == "configured"
+        result.append(TenantSummary(
+            id=tid,
+            name=name,
+            status="configured" if configured else "needs-setup",
+        ))
+    return result
 
 
 @app.post("/runs", status_code=201)

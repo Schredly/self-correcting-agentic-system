@@ -7,6 +7,7 @@ import {
   ExternalLink,
   CircleDot,
   AlertCircle,
+  Loader2,
 } from "lucide-react";
 import {
   DropdownMenu,
@@ -17,35 +18,33 @@ import {
 } from "./ui/dropdown-menu";
 import { Input } from "./ui/input";
 import { ScrollArea } from "./ui/scroll-area";
-
-interface Tenant {
-  id: string;
-  name: string;
-  status: "configured" | "needs-setup";
-}
-
-const mockTenants: Tenant[] = [
-  { id: "demo-tenant", name: "Demo Tenant", status: "configured" },
-  { id: "acme-corp", name: "Acme Corporation", status: "configured" },
-  { id: "globex", name: "Globex Industries", status: "needs-setup" },
-  { id: "wayne-ent", name: "Wayne Enterprises", status: "configured" },
-  { id: "stark-ind", name: "Stark Industries", status: "needs-setup" },
-];
+import { useTenant } from "../context/TenantContext";
 
 export function TenantSelector() {
+  const { tenants, selectedTenant, setSelectedTenant, loading } = useTenant();
   const [open, setOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState("");
-  const [selectedTenant, setSelectedTenant] = useState<Tenant>(mockTenants[0]!);
 
-  const filteredTenants = mockTenants.filter((tenant) =>
+  const filteredTenants = tenants.filter((tenant) =>
     tenant.name.toLowerCase().includes(searchQuery.toLowerCase())
   );
 
-  const handleSelectTenant = (tenant: Tenant) => {
+  const handleSelectTenant = (tenant: typeof selectedTenant & {}) => {
     setSelectedTenant(tenant);
     setOpen(false);
     setSearchQuery("");
   };
+
+  if (loading) {
+    return (
+      <div className="flex items-center gap-2 px-3 py-2 rounded-lg border border-zinc-200 bg-white">
+        <Loader2 className="w-4 h-4 text-zinc-400 animate-spin" />
+        <span className="text-sm text-zinc-500">Loading...</span>
+      </div>
+    );
+  }
+
+  if (!selectedTenant) return null;
 
   return (
     <DropdownMenu open={open} onOpenChange={setOpen}>
