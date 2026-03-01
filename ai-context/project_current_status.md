@@ -1,6 +1,35 @@
 # Project Current Status
 
 ****
+**2026-03-01 18:00 UTC** — Refactor TenantSetup into health-driven 6-step onboarding wizard
+
+- `c352b3e` — Refactor TenantSetup into health-driven 6-step onboarding wizard
+- **`frontend/src/lib/api.ts`** (updated) — Added 10 admin types (`TenantHealth`, `ClassificationLevelConfig`, `ClassificationSchema`, `UpsertClassificationSchemaParams`, `AdapterFieldMapping`, `AdapterMapping`, `UpsertAdapterMappingParams`, `GoogleDriveConfig`, `DriveNode`, `ScaffoldApplyResult`) and 9 API helpers:
+  - `fetchTenantHealth(tenantId)` — `GET /admin/{id}/health`
+  - `fetchClassificationSchema(tenantId)` — `GET /admin/{id}/classification-schema` (404 → null)
+  - `putClassificationSchema(tenantId, params)` — `PUT /admin/{id}/classification-schema`
+  - `fetchAdapterMapping(tenantId, sourceSystem, recordType)` — `GET /admin/{id}/adapter-mappings?source_system=...&record_type=...` (404 → null)
+  - `putAdapterMapping(tenantId, params)` — `PUT /admin/{id}/adapter-mappings`
+  - `fetchGoogleDriveConfig(tenantId)` — `GET /admin/{id}/google-drive` (404 → null)
+  - `putGoogleDriveConfig(tenantId, rootFolderId)` — `PUT /admin/{id}/google-drive`
+  - `fetchScaffoldPlan(tenantId)` — `GET /admin/{id}/google-drive/scaffold-plan`
+  - `applyScaffoldPlan(tenantId, rootFolderId?, sharedDriveId?)` — `POST /admin/{id}/google-drive/scaffold-apply`
+- **`frontend/src/app/screens/TenantSetup.tsx`** (rewritten, 567 → ~1450 lines) — Complete rewrite from hardcoded 7-step mock to health-driven 6-step wizard:
+  - **6 steps**: Configure Adapter, Discover Classification, Connect Google Drive, Apply Scaffold, Sync Knowledge, Activate Tenant
+  - **Health-driven**: loads `TenantHealth` via `GET /admin/{id}/health`, derives step statuses with `deriveStepStatuses()` — first incomplete step is `in-progress`, subsequent are `pending`
+  - **Step gating**: pending steps are dimmed/disabled in sidebar, auto-selects first in-progress step on load
+  - **Real API calls** for steps 1–4 (adapter mapping save, classification schema save, drive config, scaffold preview/apply)
+  - **Simulated with TODO markers** for steps 5–6 (knowledge sync via setTimeout, tenant activation via setTimeout) — matching ServiceNowConnector.tsx pattern
+  - **Step panels**: `ConfigureAdapterPanel` (adapter selection + connection form + dynamic field mapping rows), `DiscoverClassificationPanel` (simulated discover + editable level table + save), `ConnectDrivePanel` (lazy-loads config, configured banner or form), `ApplyScaffoldPanel` (preview + apply with GOOGLE_SERVICE_ACCOUNT_FILE warning), `SyncKnowledgePanel` (prerequisite banner + simulated sync), `ActivateTenantPanel` (summary checklist + activate)
+  - **Empty state**: Building2 icon + "Select a tenant to begin setup" when no tenant selected
+  - **Diagnostic log**: shared `DiagnosticLogCard` at bottom with timestamped entries across all steps
+  - **Tenant switching**: resets all state (health, step data, logs) and reloads for new tenant
+  - **Health summary card**: progress bar + 4-column status grid (Schema, Drive, Adapter, Last Run)
+  - **Error handling**: retry button on health failure, error logs in diagnostic panel, scaffold GOOGLE_SERVICE_ACCOUNT_FILE warning
+- **Verified** — `tsc --noEmit` no new errors, `vite build` succeeds (2838 modules, 345 KB gzipped JS)
+****
+
+****
 **2026-03-01 17:00 UTC** — Add TenantManagement screen with create/delete
 
 - `dc68187` — Add TenantManagement screen with create/delete functionality
