@@ -316,6 +316,91 @@ export async function applyScaffoldPlan(
   return res.json() as Promise<ScaffoldApplyResult>;
 }
 
+// ── ServiceNow connector types ───────────────────────────────────────────────
+
+export interface ServiceNowConfig {
+  tenant_id: string;
+  instance_url: string;
+  username: string;
+  api_key: string;
+  connection_tested: boolean;
+  status: "not_configured" | "connected" | "error";
+  updated_at: string;
+}
+
+export interface UpsertServiceNowConfigParams {
+  instance_url: string;
+  username: string;
+  api_key: string;
+}
+
+export interface DiscoveredDimension {
+  key: string;
+  display_name: string;
+  values: string[];
+}
+
+export interface DiscoverClassificationResponse {
+  dimensions: DiscoveredDimension[];
+}
+
+// ── ServiceNow connector API helpers ────────────────────────────────────────
+
+export async function fetchServiceNowConfig(
+  tenantId: string
+): Promise<ServiceNowConfig | null> {
+  const res = await fetch(`/admin/${tenantId}/connectors/servicenow`);
+
+  if (res.status === 404) return null;
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `GET /admin/${tenantId}/connectors/servicenow failed (${res.status}): ${text}`
+    );
+  }
+
+  return res.json() as Promise<ServiceNowConfig>;
+}
+
+export async function putServiceNowConfig(
+  tenantId: string,
+  params: UpsertServiceNowConfigParams
+): Promise<ServiceNowConfig> {
+  const res = await fetch(`/admin/${tenantId}/connectors/servicenow`, {
+    method: "PUT",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(params),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `PUT /admin/${tenantId}/connectors/servicenow failed (${res.status}): ${text}`
+    );
+  }
+
+  return res.json() as Promise<ServiceNowConfig>;
+}
+
+export async function discoverClassification(
+  tenantId: string
+): Promise<DiscoverClassificationResponse> {
+  const res = await fetch(
+    `/admin/${tenantId}/connectors/servicenow/discover-classification`,
+    { method: "POST" }
+  );
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(
+      `POST /admin/${tenantId}/connectors/servicenow/discover-classification failed (${res.status}): ${text}`
+    );
+  }
+
+  return res.json() as Promise<DiscoverClassificationResponse>;
+}
+
 // ── Run types ────────────────────────────────────────────────────────────────
 
 interface CreateRunParams {
