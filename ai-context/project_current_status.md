@@ -1,6 +1,3 @@
-
-****************
-
 # Project Current Status
 
 ## What exists on disk (pushed to `origin/main`)
@@ -15,6 +12,9 @@
   - `5ff0080` — Update project status doc with toolchain details
   - `ada9436` — Add FastAPI WebSocket backend with simulated demo run
   - `b96a700` — Add Python build artifacts to .gitignore
+  - `14cfdea` — Update project status doc with backend implementation details
+  - `ae23bf4` — Add RunManager class and POST /runs endpoint
+  - `c853adf` — Populate ai-context architecture docs (01–09) and update status doc
 
 ### Directory structure
 ```
@@ -25,8 +25,9 @@ self-correcting-agentic-system/
 │   ├── pyproject.toml          # fastapi, uvicorn, pydantic (pip install -e .)
 │   └── app/
 │       ├── __init__.py
-│       ├── main.py             # FastAPI app + WebSocket endpoint + CORS + /health
+│       ├── main.py             # FastAPI app + WebSocket + REST endpoints + CORS
 │       ├── models.py           # Pydantic models mirroring frontend TS types
+│       ├── run_manager.py      # RunManager — in-memory run lifecycle (create, get, complete, fail)
 │       └── simulation.py       # Async generator yielding timed demo events (~25s)
 └── frontend/
     ├── index.html              # Vite entry HTML
@@ -173,7 +174,14 @@ export interface AgentEvent {
    - `backend/pyproject.toml` — deps: `fastapi>=0.115.0`, `uvicorn[standard]>=0.34.0`, `pydantic>=2.0.0`
    - Run with: `cd backend && pip install -e . && uvicorn app.main:app --reload --port 8000`
 8. **`.gitignore` updated** (`b96a700`) — added `__pycache__/` and `*.egg-info/`
-9. **Frontend toolchain set up** (`128b0e9`):
+9. **RunManager introduced** (`ae23bf4`):
+   - `backend/app/run_manager.py` — `RunManager` class with in-memory `dict[str, AgentRun]` store
+   - Methods: `create_run(work_object, tenant_id)` (UUID generation, status="queued"), `get_run(run_id)`, `mark_completed(run_id)`, `mark_failed(run_id, error)`
+   - Separates run lifecycle management from WebSocket streaming
+   - `backend/app/main.py` updated with `POST /runs` endpoint (accepts `{ tenant_id, work_object }`, returns `{ run_id, status }`, HTTP 201)
+   - WebSocket endpoint unchanged — still uses simulation.py directly
+10. **ai-context docs populated** (`c853adf`) — architecture principles (01), canonical data model (02), event stream contract (03), adapter model (04), multi-tenant model (05), UI contract rules (06), skill execution model (07), evaluation model (08), non-goals (09)
+11. **Frontend toolchain set up** (`128b0e9`):
    - `package.json` — 43 dependencies, scripts: `dev`, `build`, `preview`
    - `tsconfig.json` — strict mode, bundler resolution, `@/*` path alias, `noUncheckedIndexedAccess`
    - `vite.config.ts` — `@vitejs/plugin-react` + `@tailwindcss/vite`, `@/` alias, dev server on port 3000 with proxy to `localhost:8000` (API + WebSocket)
@@ -213,6 +221,8 @@ export interface AgentEvent {
 
 ### Backend
 - **WebSocket server implemented** — simulated demo run works end-to-end
+- **RunManager class added** — in-memory run lifecycle, `POST /runs` endpoint
+- Next: wire WebSocket endpoint to use RunManager-created runs instead of standalone simulation
 - Next: replace scripted simulation with real agent orchestration layer
 
 ### Other screens
@@ -264,6 +274,12 @@ export interface AgentEvent {
 | `complete`       | `complete`     |
 | `error`          | `error`        |
 
+### REST endpoints
+| Method | Path | Request body | Response | Status |
+|--------|------|-------------|----------|--------|
+| `GET` | `/health` | — | `{ "status": "ok" }` | 200 |
+| `POST` | `/runs` | `{ "tenant_id": string, "work_object": WorkObject }` | `{ "run_id": string, "status": "queued" }` | 201 |
+
 ### WebSocket message envelope (expected from backend)
 ```json
 { "type": "run_started",  "payload": { /* full AgentRun object */ } }
@@ -271,6 +287,3 @@ export interface AgentEvent {
 { "type": "run_completed" }
 { "type": "run_failed",   "payload": { "error": "..." } }
 ```
-
-*******************
-
