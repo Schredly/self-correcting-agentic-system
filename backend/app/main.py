@@ -3,9 +3,11 @@
 import json
 import logging
 import os
+from collections import defaultdict
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
+import httpx
 from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
@@ -18,8 +20,11 @@ from .models import (
     AdapterMapping,
     ClassificationLevelConfig,
     ClassificationSchema,
+    DiscoverClassificationResponse,
+    DiscoveredDimension,
     GoogleDriveConfig,
     ScaffoldApplyRequest,
+    ServiceNowConfig,
     Tenant,
     TenantCreateRequest,
     TenantHealth,
@@ -203,7 +208,10 @@ async def get_tenant_health(tenant_id: str) -> TenantHealth:
         drive_configured=drive_configured,
         drive_scaffold_applied=drive_configured,
         knowledge_synced=False,
-        servicenow_connected=False,
+        servicenow_connected=(
+            (sn_config := tenant_config.get_servicenow_config(tenant_id)) is not None
+            and sn_config.connection_tested
+        ),
         adapter_mapping_defined=len(adapter_mappings) > 0,
         last_run_status=last_run.status if last_run else None,
     )
@@ -389,3 +397,118 @@ async def apply_scaffold_plan(tenant_id: str, body: ScaffoldApplyRequest):
         "shared_drive_id": body.shared_drive_id,
         "created": ids_map,
     }
+
+
+# ── ServiceNow connector endpoints ───────────────────────────────────────
+
+
+class UpsertServiceNowConfigRequest(BaseModel):
+    instance_url: str
+    username: str
+    api_key: str
+
+
+@app.get("/admin/{tenant_id}/connectors/servicenow")
+async def get_servicenow_config(tenant_id: str):
+    _validate_tenant_id(tenant_id)
+    if tenant_config.get_tenant(tenant_id) is None:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+    config = tenant_config.get_servicenow_config(tenant_id)
+    if config is None:
+        raise HTTPException(status_code=404, detail="ServiceNow config not found")
+    return config.model_dump()
+
+
+@app.put("/admin/{tenant_id}/connectors/servicenow")
+async def put_servicenow_config(tenant_id: str, body: UpsertServiceNowConfigRequest):
+    _validate_tenant_id(tenant_id)
+    if tenant_config.get_tenant(tenant_id) is None:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    instance_url = body.instance_url.rstrip("/")
+
+    # Test connectivity by fetching a single sys_user record
+    connection_tested = False
+    status: str = "not_configured"
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{instance_url}/api/now/table/sys_user",
+                params={"sysparm_limit": "1"},
+                auth=(body.username, body.api_key),
+            )
+            resp.raise_for_status()
+            connection_tested = True
+            status = "connected"
+    except httpx.HTTPError:
+        status = "error"
+
+    config = ServiceNowConfig(
+        tenant_id=tenant_id,
+        instance_url=instance_url,
+        username=body.username,
+        api_key=body.api_key,
+        connection_tested=connection_tested,
+        status=status,
+        updated_at=datetime.now(timezone.utc),
+    )
+    tenant_config.upsert_servicenow_config(config)
+    return config.model_dump()
+
+
+@app.post("/admin/{tenant_id}/connectors/servicenow/discover-classification")
+async def discover_classification(tenant_id: str) -> DiscoverClassificationResponse:
+    _validate_tenant_id(tenant_id)
+    if tenant_config.get_tenant(tenant_id) is None:
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    config = tenant_config.get_servicenow_config(tenant_id)
+    if config is None:
+        raise HTTPException(status_code=404, detail="ServiceNow config not found")
+    if not config.connection_tested:
+        raise HTTPException(
+            status_code=400,
+            detail="ServiceNow connection has not been tested successfully. PUT the config first.",
+        )
+
+    try:
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            resp = await client.get(
+                f"{config.instance_url}/api/now/table/sys_choice",
+                params={
+                    "sysparm_query": "name=incident^elementINcategory,subcategory,priority",
+                    "sysparm_fields": "element,label,value",
+                    "sysparm_limit": "500",
+                },
+                auth=(config.username, config.api_key),
+            )
+            resp.raise_for_status()
+    except httpx.HTTPError as exc:
+        raise HTTPException(
+            status_code=502,
+            detail=f"Failed to fetch classification data from ServiceNow: {exc}",
+        )
+
+    results = resp.json().get("result", [])
+
+    grouped: dict[str, list[str]] = defaultdict(list)
+    labels: dict[str, str] = {}
+    for record in results:
+        element = record.get("element", "")
+        value = record.get("value", "")
+        label = record.get("label", element)
+        if element and value:
+            grouped[element].append(value)
+            if element not in labels:
+                labels[element] = label
+
+    dimensions = [
+        DiscoveredDimension(
+            key=element,
+            display_name=labels.get(element, element),
+            values=sorted(set(values)),
+        )
+        for element, values in sorted(grouped.items())
+    ]
+
+    return DiscoverClassificationResponse(dimensions=dimensions)

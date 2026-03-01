@@ -167,3 +167,26 @@ class TenantHealth(BaseModel):
 class ScaffoldApplyRequest(BaseModel):
     root_folder_id: str | None = None
     shared_drive_id: str | None = None
+
+
+# ── ServiceNow connector models ──────────────────────────────────────────
+
+
+class ServiceNowConfig(BaseModel):
+    tenant_id: str
+    instance_url: str
+    username: str
+    api_key: str
+    connection_tested: bool = False
+    status: Literal["not_configured", "connected", "error"]
+    updated_at: datetime
+
+
+class DiscoveredDimension(BaseModel):
+    key: str
+    display_name: str
+    values: list[str]
+
+
+class DiscoverClassificationResponse(BaseModel):
+    dimensions: list[DiscoveredDimension]

@@ -6,7 +6,7 @@ Drive configs on a per-tenant basis.
 
 from __future__ import annotations
 
-from .models import AdapterMapping, ClassificationSchema, GoogleDriveConfig, Tenant
+from .models import AdapterMapping, ClassificationSchema, GoogleDriveConfig, ServiceNowConfig, Tenant
 
 
 class TenantConfigStore:
@@ -15,6 +15,7 @@ class TenantConfigStore:
         self.schemas: dict[str, ClassificationSchema] = {}
         self.adapter_mappings: dict[tuple[str, str, str], AdapterMapping] = {}
         self.drive_configs: dict[str, GoogleDriveConfig] = {}
+        self.servicenow_configs: dict[str, ServiceNowConfig] = {}
 
     # ── Tenant CRUD ───────────────────────────────────────────────────────
 
@@ -37,6 +38,7 @@ class TenantConfigStore:
         # Clean up related config
         self.schemas.pop(tenant_id, None)
         self.drive_configs.pop(tenant_id, None)
+        self.servicenow_configs.pop(tenant_id, None)
         keys_to_remove = [k for k in self.adapter_mappings if k[0] == tenant_id]
         for key in keys_to_remove:
             del self.adapter_mappings[key]
@@ -85,3 +87,15 @@ class TenantConfigStore:
         if not config.tenant_id:
             raise ValueError("tenant_id must not be empty")
         self.drive_configs[config.tenant_id] = config
+
+    # ── ServiceNow config ─────────────────────────────────────────────────
+
+    def get_servicenow_config(self, tenant_id: str) -> ServiceNowConfig | None:
+        if not tenant_id:
+            return None
+        return self.servicenow_configs.get(tenant_id)
+
+    def upsert_servicenow_config(self, config: ServiceNowConfig) -> None:
+        if not config.tenant_id:
+            raise ValueError("tenant_id must not be empty")
+        self.servicenow_configs[config.tenant_id] = config
