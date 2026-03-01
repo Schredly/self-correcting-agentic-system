@@ -5,41 +5,51 @@
 ### Repository
 - **Repo:** `https://github.com/Schredly/self-correcting-agentic-system.git`
 - **Branch:** `main`
-- **Initial commit:** `77bfed6` — contains `.gitignore` + full `frontend/` tree
+- **Commits:**
+  - `77bfed6` — Initial commit: `.gitignore` + frontend source tree
+  - `e8b7a0b` — Replace mock data with real-time WebSocket data layer
+  - `128b0e9` — Add frontend toolchain: Vite 6, Tailwind v4, TypeScript strict
 
 ### Directory structure
 ```
 self-correcting-agentic-system/
 ├── .gitignore                  # excludes .DS_Store, node_modules/, dist/, .env
-├── ai-context/                 # architecture docs (00–10)
+├── ai-context/                 # architecture docs (00–10) + project_current_status.md
 └── frontend/
+    ├── index.html              # Vite entry HTML
+    ├── package.json            # 43 deps, scripts: dev/build/preview
+    ├── package-lock.json
+    ├── tsconfig.json           # strict mode, @/* path alias
+    ├── vite.config.ts          # React + Tailwind v4 plugins, dev proxy to :8000
     └── src/
+        ├── main.tsx            # React root mount + CSS import
         ├── types/
-        │   └── agents.ts       # canonical types (see below)
+        │   └── agents.ts       # canonical types (WorkObject, AgentRun, SkillExecution, AgentEvent, etc.)
+        ├── state/
+        │   └── agentReducer.ts # reducer for AgentRun state (run_started, skill_update, run_completed, run_failed)
+        ├── hooks/
+        │   └── useAgentRun.ts  # WebSocket hook with reconnect
         ├── app/
         │   ├── App.tsx
         │   ├── routes.ts
         │   ├── screens/
-        │   │   ├── AgentConsole.tsx          # main console — STILL USES MOCK DATA
+        │   │   ├── AgentConsole.tsx          # live data via useAgentRun (no mock data)
         │   │   ├── EvaluationDashboard.tsx
         │   │   ├── AdapterConfiguration.tsx
         │   │   ├── ClassificationManager.tsx
         │   │   └── KnowledgeAlignment.tsx
         │   └── components/
         │       ├── Layout.tsx
-        │       ├── SkillDetailDrawer.tsx     # detail drawer — uses local Skill interface
+        │       ├── SkillDetailDrawer.tsx     # uses canonical SkillExecution type
         │       ├── figma/
         │       │   └── ImageWithFallback.tsx
         │       └── ui/                      # shadcn/ui primitives (~40 files)
         └── styles/
-            ├── index.css
-            ├── tailwind.css
-            ├── theme.css
-            └── fonts.css
+            ├── index.css       # imports fonts, tailwind, theme
+            ├── tailwind.css    # Tailwind v4 CSS-first config (@import 'tailwindcss', @source, tw-animate-css)
+            ├── theme.css       # CSS variables, @theme inline, @layer base
+            └── fonts.css       # (empty placeholder)
 ```
-
-### No package.json / config yet
-The frontend has source files only — no `package.json`, `tsconfig.json`, `vite.config.ts`, or `tailwind.config.ts` have been created yet.
 
 ---
 
@@ -138,44 +148,35 @@ export interface AgentEvent {
    - Tools → `details?.tool_calls` (string[], simple list)
    - Outputs → `details?.outputs` (string, rendered directly)
    - Layout and styling unchanged
+7. **Frontend toolchain set up** (`128b0e9`):
+   - `package.json` — 43 dependencies, scripts: `dev`, `build`, `preview`
+   - `tsconfig.json` — strict mode, bundler resolution, `@/*` path alias, `noUncheckedIndexedAccess`
+   - `vite.config.ts` — `@vitejs/plugin-react` + `@tailwindcss/vite`, `@/` alias, dev server on port 3000 with proxy to `localhost:8000` (API + WebSocket)
+   - `index.html` — Vite entry HTML
+   - `src/main.tsx` — React 19 `createRoot`, imports `./styles/index.css`
+   - **No `tailwind.config.ts`** — Tailwind v4 is CSS-first (config lives in `tailwind.css` and `theme.css`)
+   - `npm install` succeeded — 238 packages, 0 vulnerabilities
+   - `vite build` succeeded — 2751 modules, 289 KB gzipped JS, 15 KB gzipped CSS, 2.1s build
+   - TS type-check passes for all project files (pre-existing errors in untouched screens only)
 
----
-
-## Updated directory structure (after all changes)
-```
-frontend/src/
-├── types/
-│   └── agents.ts              # canonical types — unchanged
-├── state/
-│   └── agentReducer.ts        # NEW — reducer for AgentRun state
-├── hooks/
-│   └── useAgentRun.ts         # NEW — WebSocket hook
-├── app/
-│   ├── App.tsx
-│   ├── routes.ts
-│   ├── screens/
-│   │   ├── AgentConsole.tsx    # MODIFIED — uses useAgentRun, no mock data
-│   │   ├── EvaluationDashboard.tsx     # untouched
-│   │   ├── AdapterConfiguration.tsx    # untouched
-│   │   ├── ClassificationManager.tsx   # untouched
-│   │   └── KnowledgeAlignment.tsx      # untouched
-│   └── components/
-│       ├── Layout.tsx                  # untouched
-│       ├── SkillDetailDrawer.tsx       # MODIFIED — uses SkillExecution type
-│       ├── figma/
-│       │   └── ImageWithFallback.tsx   # untouched
-│       └── ui/                         # untouched (~40 files)
-└── styles/                             # untouched
-```
+### Frontend toolchain details
+| Tool | Version | Notes |
+|------|---------|-------|
+| Vite | 6.x | Dev server + build |
+| React | 19.x | With react-dom |
+| TypeScript | 5.7+ | Strict mode |
+| Tailwind CSS | 4.x | CSS-first, `@tailwindcss/vite` plugin |
+| tw-animate-css | 1.2+ | Animation utilities |
+| motion | 12.x | Animation library (formerly framer-motion) |
+| react-router | 7.x | `createBrowserRouter` + `RouterProvider` |
+| Radix UI | latest | 27 primitives |
+| shadcn/ui | — | Built on Radix, source in `ui/` |
+| lucide-react | 0.469+ | Icon library |
+| recharts | 2.15+ | Data visualization |
 
 ---
 
 ## What still needs to be done
-
-### Frontend toolchain
-- No `package.json`, `tsconfig.json`, `vite.config.ts`, or `tailwind.config.ts` yet
-- Dependencies needed: `react`, `react-dom`, `motion`, `lucide-react`, `typescript`, `tailwindcss`, shadcn/ui packages
-- TS diagnostics will clear once `node_modules` is installed
 
 ### Backend
 - WebSocket server at `ws://localhost:8000/runs/{runId}/events` not yet implemented
@@ -183,6 +184,13 @@ frontend/src/
 
 ### Other screens
 - `EvaluationDashboard.tsx`, `AdapterConfiguration.tsx`, `ClassificationManager.tsx`, `KnowledgeAlignment.tsx` — still have their own data needs (not addressed yet)
+- These screens have pre-existing TS errors (unused imports, type mismatches) that should be cleaned up when they are wired to real data
+
+### Pre-existing TS errors in untouched screens
+- `ClassificationManager.tsx` — unused imports (motion, Settings2, Eye, EyeOff, ChevronUp), ref type mismatch, unused `setFieldMapping`
+- `EvaluationDashboard.tsx` — unused imports (useState, Filter, recharts)
+- `KnowledgeAlignment.tsx` — unused imports (Filter, Button), unused `selectedTags`/`setSelectedTags`
+- `calendar.tsx` — `IconLeft` API changed in react-day-picker v9
 
 ---
 
