@@ -9,12 +9,22 @@
   - `77bfed6` — Initial commit: `.gitignore` + frontend source tree
   - `e8b7a0b` — Replace mock data with real-time WebSocket data layer
   - `128b0e9` — Add frontend toolchain: Vite 6, Tailwind v4, TypeScript strict
+  - `5ff0080` — Update project status doc with toolchain details
+  - `ada9436` — Add FastAPI WebSocket backend with simulated demo run
+  - `b96a700` — Add Python build artifacts to .gitignore
 
 ### Directory structure
 ```
 self-correcting-agentic-system/
-├── .gitignore                  # excludes .DS_Store, node_modules/, dist/, .env
+├── .gitignore                  # excludes .DS_Store, node_modules/, dist/, .env, __pycache__/, *.egg-info/
 ├── ai-context/                 # architecture docs (00–10) + project_current_status.md
+├── backend/
+│   ├── pyproject.toml          # fastapi, uvicorn, pydantic (pip install -e .)
+│   └── app/
+│       ├── __init__.py
+│       ├── main.py             # FastAPI app + WebSocket endpoint + CORS + /health
+│       ├── models.py           # Pydantic models mirroring frontend TS types
+│       └── simulation.py       # Async generator yielding timed demo events (~25s)
 └── frontend/
     ├── index.html              # Vite entry HTML
     ├── package.json            # 43 deps, scripts: dev/build/preview
@@ -148,7 +158,19 @@ export interface AgentEvent {
    - Tools → `details?.tool_calls` (string[], simple list)
    - Outputs → `details?.outputs` (string, rendered directly)
    - Layout and styling unchanged
-7. **Frontend toolchain set up** (`128b0e9`):
+7. **FastAPI WebSocket backend implemented** (`ada9436`):
+   - `backend/app/models.py` — Pydantic models mirroring all frontend TS types (`WorkObject`, `AgentRun`, `AgentEvent`, `SkillExecution`, etc.) plus WebSocket envelope models (`RunStartedMessage`, `SkillUpdateMessage`, `RunCompletedMessage`, `RunFailedMessage`)
+   - `backend/app/simulation.py` — Async generator `simulate_demo_run(run_id)` yields 31 messages (1 `run_started`, 29 `skill_update`s across 4 skills, 1 `run_completed`) with realistic `asyncio.sleep()` delays totaling ~25 seconds
+   - Demo scenario: ServiceNow defective-item return (Sarah Johnson, order ORD-98234, SKU ACM-2847-BLK)
+   - 4 skills: Classification Validator (0.94), Vendor Attribution (0.98), Policy Retrieval (0.87), Resolution Recommender (0.91)
+   - Each skill progresses: thinking → retrieval → planning → tool_call → tool_result → verification → complete
+   - Metadata keys match `mergeDetails()`: `inputs`, `sources`, `steps`, `tool`, `outputs`
+   - `skill_id` values are human-readable (used as display `name` by reducer line 86)
+   - `backend/app/main.py` — FastAPI app with `GET /health`, `WebSocket /runs/{run_id}/events`, CORS for `http://localhost:3000`, error handling sends `run_failed` on exception
+   - `backend/pyproject.toml` — deps: `fastapi>=0.115.0`, `uvicorn[standard]>=0.34.0`, `pydantic>=2.0.0`
+   - Run with: `cd backend && pip install -e . && uvicorn app.main:app --reload --port 8000`
+8. **`.gitignore` updated** (`b96a700`) — added `__pycache__/` and `*.egg-info/`
+9. **Frontend toolchain set up** (`128b0e9`):
    - `package.json` — 43 dependencies, scripts: `dev`, `build`, `preview`
    - `tsconfig.json` — strict mode, bundler resolution, `@/*` path alias, `noUncheckedIndexedAccess`
    - `vite.config.ts` — `@vitejs/plugin-react` + `@tailwindcss/vite`, `@/` alias, dev server on port 3000 with proxy to `localhost:8000` (API + WebSocket)
@@ -158,6 +180,14 @@ export interface AgentEvent {
    - `npm install` succeeded — 238 packages, 0 vulnerabilities
    - `vite build` succeeded — 2751 modules, 289 KB gzipped JS, 15 KB gzipped CSS, 2.1s build
    - TS type-check passes for all project files (pre-existing errors in untouched screens only)
+
+### Backend toolchain details
+| Tool | Version | Notes |
+|------|---------|-------|
+| FastAPI | 0.115+ | WebSocket + REST endpoints |
+| Uvicorn | 0.34+ | ASGI server with `--reload` |
+| Pydantic | 2.x | Models with `model_dump()` serialization |
+| Python | 3.11+ | Required by pyproject.toml |
 
 ### Frontend toolchain details
 | Tool | Version | Notes |
@@ -179,8 +209,8 @@ export interface AgentEvent {
 ## What still needs to be done
 
 ### Backend
-- WebSocket server at `ws://localhost:8000/runs/{runId}/events` not yet implemented
-- Must send JSON messages matching `AgentAction` discriminated union (see envelope format below)
+- **WebSocket server implemented** — simulated demo run works end-to-end
+- Next: replace scripted simulation with real agent orchestration layer
 
 ### Other screens
 - `EvaluationDashboard.tsx`, `AdapterConfiguration.tsx`, `ClassificationManager.tsx`, `KnowledgeAlignment.tsx` — still have their own data needs (not addressed yet)
