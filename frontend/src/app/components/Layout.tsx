@@ -14,6 +14,7 @@ import {
   Menu,
   Settings,
   Cable,
+  Workflow,
 } from "lucide-react";
 import { TenantSelector } from "./TenantSelector";
 import { TenantProvider } from "../context/TenantContext";
@@ -30,6 +31,7 @@ import {
 
 const navigation = [
   { name: "Agent Console", path: "/", icon: Activity },
+  { name: "Tenant Onboarding", path: "/tenant-onboarding", icon: Workflow },
   { name: "Knowledge", path: "/knowledge", icon: BookOpen },
   { name: "Evaluation", path: "/evaluation", icon: BarChart3 },
   {
