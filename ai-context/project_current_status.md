@@ -1,6 +1,27 @@
 # Project Current Status
 
 ****
+**2026-03-01 10:00 UTC** — Tenant admin configuration endpoints
+
+- `4e2fa07` — Add tenant-level admin configuration endpoints
+- **`backend/app/models.py`** (updated) — Added 5 new Pydantic models for tenant admin config:
+  - `ClassificationLevelConfig` — key, display_name, required (defines one level in the N-level taxonomy)
+  - `ClassificationSchema` — tenant_id, levels[], version, updated_at
+  - `AdapterFieldMapping` — source_field, classification_key (one field-to-key mapping)
+  - `AdapterMapping` — tenant_id, source_system, record_type, mappings[], updated_at
+  - `GoogleDriveConfig` — tenant_id, root_folder_id, status ("configured"/"not_configured"), updated_at
+- **`backend/app/tenant_config.py`** (new) — `TenantConfigStore` in-memory store with get/upsert methods for all three config types. Adapter mappings keyed by `(tenant_id, source_system, record_type)` tuple. All mutators validate non-empty tenant_id.
+- **`backend/app/main.py`** (updated) — Added `TenantConfigStore` instance at module level, `_validate_tenant_id()` helper (422 on empty/whitespace), and 6 admin endpoints:
+  - `GET /admin/{tenant_id}/classification-schema` — returns schema or 404
+  - `PUT /admin/{tenant_id}/classification-schema` — upserts with server-set `updated_at`
+  - `GET /admin/{tenant_id}/adapter-mappings?source_system=&record_type=` — returns mapping or 404
+  - `PUT /admin/{tenant_id}/adapter-mappings` — upserts keyed by (tenant, source, type)
+  - `GET /admin/{tenant_id}/google-drive` — returns config or 404
+  - `PUT /admin/{tenant_id}/google-drive` — upserts, auto-sets status from root_folder_id presence
+- **Cross-tenant isolation**: each GET only returns data for the requested tenant_id; no data leakage between tenants.
+****
+
+****
 **2026-03-01 09:30 UTC** — Frontend wired to REST + tenant-aware WebSocket
 
 - `3e672d6` — Wire frontend to create runs via REST and subscribe with tenant_id
@@ -55,6 +76,8 @@
   - `9e97c45` — Enforce tenant isolation on REST and WebSocket endpoints
   - `2e192d4` — Update project status doc with tenant isolation details
   - `3e672d6` — Wire frontend to create runs via REST and subscribe with tenant_id
+  - `9e63522` — Update project status doc with frontend REST + WebSocket wiring
+  - `4e2fa07` — Add tenant-level admin configuration endpoints
 
 ### Directory structure
 ```
@@ -66,11 +89,12 @@ self-correcting-agentic-system/
 │   └── app/
 │       ├── __init__.py
 │       ├── event_bus.py        # In-memory per-run EventBus with history replay
-│       ├── main.py             # FastAPI app + WebSocket (subscriber) + REST + CORS
-│       ├── models.py           # Pydantic models mirroring frontend TS types
+│       ├── main.py             # FastAPI app + WebSocket (subscriber) + REST + admin endpoints + CORS
+│       ├── models.py           # Pydantic models mirroring frontend TS types + admin config models
 │       ├── orchestrator.py     # Orchestrator — drives execution, publishes to EventBus
 │       ├── run_manager.py      # RunManager — in-memory run lifecycle (create, get, running, complete, fail)
-│       └── simulation.py       # Async generators for timed demo events (~25s)
+│       ├── simulation.py       # Async generators for timed demo events (~25s)
+│       └── tenant_config.py    # TenantConfigStore — in-memory per-tenant admin config
 └── frontend/
     ├── index.html              # Vite entry HTML
     ├── package.json            # 43 deps, scripts: dev/build/preview
@@ -246,7 +270,14 @@ export interface AgentEvent {
     - `AgentConsole.tsx` — on mount calls `createRun()` with `TENANT_ID` and `DEMO_WORK_OBJECT`, stores run_id in state, passes to hook
     - No more hardcoded `demo-run-1` — each page load creates a fresh run
     - Full end-to-end flow: POST /runs → orchestrator starts → WebSocket subscribes with tenant_id → events stream
-14. **Frontend toolchain set up** (`128b0e9`):
+15. **Tenant admin configuration endpoints** (`4e2fa07`):
+    - `TenantConfigStore` — in-memory store for classification schemas, adapter mappings, Google Drive configs
+    - 6 admin endpoints under `/admin/{tenant_id}/` — GET + PUT for each config type
+    - Adapter mappings keyed by (tenant_id, source_system, record_type) triple
+    - Google Drive status auto-derived from root_folder_id presence
+    - All endpoints validate non-empty tenant_id (422), return 404 when config not found
+    - Cross-tenant isolation: no data leakage between tenants
+16. **Frontend toolchain set up** (`128b0e9`):
    - `package.json` — 43 dependencies, scripts: `dev`, `build`, `preview`
    - `tsconfig.json` — strict mode, bundler resolution, `@/*` path alias, `noUncheckedIndexedAccess`
    - `vite.config.ts` — `@vitejs/plugin-react` + `@tailwindcss/vite`, `@/` alias, dev server on port 3000 with proxy to `localhost:8000` (API + WebSocket)
@@ -288,9 +319,11 @@ export interface AgentEvent {
 - **Event-driven architecture complete** — EventBus + Orchestrator + RunManager + subscriber-only WebSocket
 - **Tenant isolation enforced** — all run-scoped endpoints require `tenant_id`
 - **Demo simulation works end-to-end** — `POST /runs` triggers execution, WebSocket streams events with history replay
+- **Tenant admin config endpoints complete** — classification schema, adapter mappings, Google Drive config (GET + PUT each)
 - Next: replace scripted simulation with real agent orchestration (LLM-driven skills)
-- Next: persistent storage (replace in-memory RunManager)
+- Next: persistent storage (replace in-memory RunManager and TenantConfigStore)
 - Next: authentication layer (currently tenant_id is a query param, not token-derived)
+- Next: wire frontend admin screens (ClassificationManager, AdapterConfiguration) to admin endpoints
 
 ### Frontend
 - **Frontend fully wired** — creates runs via REST, subscribes with tenant_id
@@ -352,6 +385,12 @@ export interface AgentEvent {
 | `GET` | `/health` | — | `{ "status": "ok" }` | 200 |
 | `POST` | `/runs` | `{ "tenant_id": string, "work_object": WorkObject }` | `{ "run_id": string, "status": "queued", "tenant_id": string }` | 201 |
 | `GET` | `/runs/{run_id}?tenant_id=` | — | `AgentRun` (full object) | 200 / 404 / 422 |
+| `GET` | `/admin/{tenant_id}/classification-schema` | — | `ClassificationSchema` | 200 / 404 / 422 |
+| `PUT` | `/admin/{tenant_id}/classification-schema` | `{ levels: ClassificationLevelConfig[], version: string }` | `ClassificationSchema` | 200 / 422 |
+| `GET` | `/admin/{tenant_id}/adapter-mappings?source_system=&record_type=` | — | `AdapterMapping` | 200 / 404 / 422 |
+| `PUT` | `/admin/{tenant_id}/adapter-mappings` | `{ source_system, record_type, mappings: AdapterFieldMapping[] }` | `AdapterMapping` | 200 / 422 |
+| `GET` | `/admin/{tenant_id}/google-drive` | — | `GoogleDriveConfig` | 200 / 404 / 422 |
+| `PUT` | `/admin/{tenant_id}/google-drive` | `{ root_folder_id?: string }` | `GoogleDriveConfig` | 200 / 422 |
 
 ### WebSocket message envelope (expected from backend)
 ```json
