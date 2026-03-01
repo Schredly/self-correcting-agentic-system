@@ -1,6 +1,16 @@
 # Project Current Status
 
 ****
+**2026-03-01 09:30 UTC** — Frontend wired to REST + tenant-aware WebSocket
+
+- `3e672d6` — Wire frontend to create runs via REST and subscribe with tenant_id
+- **`frontend/src/lib/api.ts`** (new) — `createRun()` fetch helper using relative `/runs` path (goes through Vite proxy). Throws on non-2xx with status and body.
+- **`frontend/src/hooks/useAgentRun.ts`** (updated) — Signature changed to `useAgentRun(runId: string | null, tenantId: string)`. Returns `{ run: null, status: "disconnected" }` when `runId` is null. WebSocket URL now uses `location.host` (Vite proxy) with `?tenant_id=` query param. Effect depends on both `runId` and `tenantId`.
+- **`frontend/src/app/screens/AgentConsole.tsx`** (updated) — No longer hardcodes `demo-run-1`. On mount calls `createRun({ tenant_id: "demo-tenant", work_object: DEMO_WORK_OBJECT })`, stores returned `run_id` in state, passes it to `useAgentRun(runId, tenantId)`. Shows error state if `createRun` fails. All layout/styling/components unchanged.
+- **Full end-to-end flow now works**: Frontend POSTs to create run → backend creates run + starts orchestrator → frontend subscribes to WebSocket with tenant_id → events stream in real-time.
+****
+
+****
 **2026-03-01 09:00 UTC** — Tenant isolation enforced
 
 - `9e97c45` — Enforce tenant isolation on REST and WebSocket endpoints
@@ -43,6 +53,8 @@
   - `fc8be7f` — Add EventBus + Orchestrator, make WebSocket subscriber-only
   - `f43ef9c` — Update project status doc with EventBus + Orchestrator details
   - `9e97c45` — Enforce tenant isolation on REST and WebSocket endpoints
+  - `2e192d4` — Update project status doc with tenant isolation details
+  - `3e672d6` — Wire frontend to create runs via REST and subscribe with tenant_id
 
 ### Directory structure
 ```
@@ -71,8 +83,10 @@ self-correcting-agentic-system/
         │   └── agents.ts       # canonical types (WorkObject, AgentRun, SkillExecution, AgentEvent, etc.)
         ├── state/
         │   └── agentReducer.ts # reducer for AgentRun state (run_started, skill_update, run_completed, run_failed)
+        ├── lib/
+        │   └── api.ts          # createRun() fetch helper (POST /runs via Vite proxy)
         ├── hooks/
-        │   └── useAgentRun.ts  # WebSocket hook with reconnect
+        │   └── useAgentRun.ts  # WebSocket hook with tenant_id, nullable runId, reconnect
         ├── app/
         │   ├── App.tsx
         │   ├── routes.ts
@@ -226,7 +240,13 @@ export interface AgentEvent {
     - `POST /runs` response now returns `{ run_id, status, tenant_id }`
     - Demo run seeded with `tenant_id="demo-tenant"`
     - Frontend not yet updated — needs `?tenant_id=demo-tenant` added to WebSocket URL
-13. **Frontend toolchain set up** (`128b0e9`):
+13. **Frontend wired to REST + tenant-aware WebSocket** (`3e672d6`):
+    - `frontend/src/lib/api.ts` — `createRun()` fetch helper via Vite proxy
+    - `useAgentRun(runId: string | null, tenantId: string)` — nullable runId, tenant_id query param, uses `location.host` for Vite proxy
+    - `AgentConsole.tsx` — on mount calls `createRun()` with `TENANT_ID` and `DEMO_WORK_OBJECT`, stores run_id in state, passes to hook
+    - No more hardcoded `demo-run-1` — each page load creates a fresh run
+    - Full end-to-end flow: POST /runs → orchestrator starts → WebSocket subscribes with tenant_id → events stream
+14. **Frontend toolchain set up** (`128b0e9`):
    - `package.json` — 43 dependencies, scripts: `dev`, `build`, `preview`
    - `tsconfig.json` — strict mode, bundler resolution, `@/*` path alias, `noUncheckedIndexedAccess`
    - `vite.config.ts` — `@vitejs/plugin-react` + `@tailwindcss/vite`, `@/` alias, dev server on port 3000 with proxy to `localhost:8000` (API + WebSocket)
@@ -272,9 +292,10 @@ export interface AgentEvent {
 - Next: persistent storage (replace in-memory RunManager)
 - Next: authentication layer (currently tenant_id is a query param, not token-derived)
 
-### Frontend (pending)
-- Update `useAgentRun` to pass `?tenant_id=demo-tenant` in WebSocket URL
-- Frontend currently cannot connect due to tenant isolation enforcement
+### Frontend
+- **Frontend fully wired** — creates runs via REST, subscribes with tenant_id
+- Each page load creates a fresh run (no hardcoded run_id)
+- Next: make work object configurable (currently hardcoded demo data in AgentConsole)
 
 ### Other screens
 - `EvaluationDashboard.tsx`, `AdapterConfiguration.tsx`, `ClassificationManager.tsx`, `KnowledgeAlignment.tsx` — still have their own data needs (not addressed yet)
