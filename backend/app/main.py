@@ -4,8 +4,10 @@ import logging
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
+from pydantic import BaseModel
 
-from .models import RunFailedMessage
+from .models import RunFailedMessage, WorkObject
+from .run_manager import RunManager
 from .simulation import simulate_demo_run
 
 logging.basicConfig(level=logging.INFO)
@@ -20,10 +22,38 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+run_manager = RunManager()
+
+
+# ── REST endpoints ───────────────────────────────────────────────────────────
+
+
+class CreateRunRequest(BaseModel):
+    tenant_id: str
+    work_object: WorkObject
+
+
+class CreateRunResponse(BaseModel):
+    run_id: str
+    status: str
+
 
 @app.get("/health")
 async def health() -> dict[str, str]:
     return {"status": "ok"}
+
+
+@app.post("/runs", status_code=201)
+async def create_run(body: CreateRunRequest) -> CreateRunResponse:
+    run = run_manager.create_run(
+        work_object=body.work_object,
+        tenant_id=body.tenant_id,
+    )
+    logger.info("Run created — run_id=%s, tenant=%s", run.run_id, run.tenant_id)
+    return CreateRunResponse(run_id=run.run_id, status=run.status)
+
+
+# ── WebSocket endpoint (unchanged) ──────────────────────────────────────────
 
 
 @app.websocket("/runs/{run_id}/events")
