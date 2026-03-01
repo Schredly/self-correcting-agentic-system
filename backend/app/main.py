@@ -8,6 +8,7 @@ from fastapi import FastAPI, HTTPException, Query, WebSocket, WebSocketDisconnec
 from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 
+from .drive_scaffolder import DriveScaffolder
 from .event_bus import EventBus
 from .models import (
     AdapterFieldMapping,
@@ -29,6 +30,7 @@ run_manager = RunManager()
 event_bus = EventBus()
 orchestrator = Orchestrator(run_manager, event_bus)
 tenant_config = TenantConfigStore()
+drive_scaffolder = DriveScaffolder(tenant_config)
 
 DEMO_RUN_ID = "demo-run-1"
 DEMO_TENANT_ID = "demo-tenant"
@@ -230,3 +232,24 @@ async def put_google_drive_config(tenant_id: str, body: UpsertGoogleDriveConfigR
     )
     tenant_config.upsert_drive_config(config)
     return config.model_dump()
+
+
+# ── Google Drive scaffold endpoints ──────────────────────────────────────
+
+
+@app.get("/admin/{tenant_id}/google-drive/scaffold-plan")
+async def get_scaffold_plan(tenant_id: str):
+    """Dry-run: return the list of folders the scaffolder would create."""
+    _validate_tenant_id(tenant_id)
+    plan = drive_scaffolder.build_scaffold_plan(tenant_id)
+    return [node.model_dump() for node in plan]
+
+
+@app.post("/admin/{tenant_id}/google-drive/scaffold-apply", status_code=501)
+async def apply_scaffold_plan(tenant_id: str):
+    """Apply the scaffold plan — not available until Google Drive auth is configured."""
+    _validate_tenant_id(tenant_id)
+    raise HTTPException(
+        status_code=501,
+        detail="Google Drive auth/provider not configured yet",
+    )
