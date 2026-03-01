@@ -64,3 +64,10 @@ class RunManager:
                 "completed_at": datetime.now(timezone.utc).isoformat(),
             }
         )
+
+    def last_run_for_tenant(self, tenant_id: str) -> AgentRun | None:
+        """Return the most recently started run for *tenant_id*, or None."""
+        tenant_runs = [r for r in self.runs.values() if r.tenant_id == tenant_id]
+        if not tenant_runs:
+            return None
+        return max(tenant_runs, key=lambda r: r.started_at)

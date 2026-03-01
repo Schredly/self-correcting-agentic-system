@@ -139,6 +139,17 @@ class TenantSummary(BaseModel):
     status: Literal["configured", "needs-setup"]
 
 
+class TenantHealth(BaseModel):
+    tenant_id: str
+    schema_defined: bool
+    drive_configured: bool
+    drive_scaffold_applied: bool
+    knowledge_synced: bool
+    servicenow_connected: bool
+    adapter_mapping_defined: bool
+    last_run_status: str | None
+
+
 class ScaffoldApplyRequest(BaseModel):
     root_folder_id: str | None = None
     shared_drive_id: str | None = None

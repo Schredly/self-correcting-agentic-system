@@ -20,6 +20,7 @@ from .models import (
     ClassificationSchema,
     GoogleDriveConfig,
     ScaffoldApplyRequest,
+    TenantHealth,
     TenantSummary,
     WorkObject,
 )
@@ -170,6 +171,33 @@ async def run_events(websocket: WebSocket, run_id: str) -> None:
 def _validate_tenant_id(tenant_id: str) -> None:
     if not tenant_id.strip():
         raise HTTPException(status_code=422, detail="tenant_id must not be empty")
+
+
+# ── Tenant health ─────────────────────────────────────────────────────────────
+
+
+@app.get("/admin/{tenant_id}/health")
+async def get_tenant_health(tenant_id: str) -> TenantHealth:
+    _validate_tenant_id(tenant_id)
+    if tenant_id not in tenant_config.list_tenants():
+        raise HTTPException(status_code=404, detail="Tenant not found")
+
+    schema = tenant_config.get_schema(tenant_id)
+    drive = tenant_config.get_drive_config(tenant_id)
+    drive_configured = drive is not None and drive.status == "configured"
+    adapter_mappings = tenant_config.list_adapter_mappings(tenant_id)
+    last_run = run_manager.last_run_for_tenant(tenant_id)
+
+    return TenantHealth(
+        tenant_id=tenant_id,
+        schema_defined=schema is not None,
+        drive_configured=drive_configured,
+        drive_scaffold_applied=drive_configured,
+        knowledge_synced=False,
+        servicenow_connected=False,
+        adapter_mapping_defined=len(adapter_mappings) > 0,
+        last_run_status=last_run.status if last_run else None,
+    )
 
 
 # ── Classification schema ────────────────────────────────────────────────────
