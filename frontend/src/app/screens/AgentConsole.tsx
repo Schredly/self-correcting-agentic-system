@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import { motion } from "motion/react";
 import {
   ChevronRight,
@@ -14,7 +14,37 @@ import SkillDetailDrawer from "../components/SkillDetailDrawer";
 import { Badge } from "../components/ui/badge";
 import { ScrollArea } from "../components/ui/scroll-area";
 import { useAgentRun } from "../../hooks/useAgentRun";
-import type { SkillExecution } from "../../types/agents";
+import { createRun } from "../../lib/api";
+import type { SkillExecution, WorkObject } from "../../types/agents";
+
+const TENANT_ID = "demo-tenant";
+
+const DEMO_WORK_OBJECT: WorkObject = {
+  work_id: "INC-2024-08172",
+  source_system: "servicenow",
+  record_type: "incident",
+  title: "Defective Item Return — Order ORD-98234",
+  description:
+    "Customer Sarah Johnson reports that item SKU ACM-2847-BLK " +
+    "(Acme Wireless Headphones, Black) arrived with a non-functional " +
+    "left ear cup. Customer is requesting a full refund. Order was " +
+    "placed 12 days ago and is within the 30-day return window.",
+  classification: [
+    { name: "category", value: "Product" },
+    { name: "subcategory", value: "Returns" },
+    { name: "type", value: "Defective Item" },
+  ],
+  metadata: {
+    priority: "P3",
+    assignedTo: "Agent Smith",
+    customerName: "Sarah Johnson",
+    orderNumber: "ORD-98234",
+    sku: "ACM-2847-BLK",
+    productName: "Acme Wireless Headphones (Black)",
+    purchaseDate: "2024-08-05",
+    returnWindow: "30 days",
+  },
+};
 
 function StatusIcon({ state }: { state: SkillExecution["state"] }) {
   switch (state) {
@@ -118,8 +148,37 @@ function SkillCard({ skill, onClick }: { skill: SkillExecution; onClick: () => v
 }
 
 export default function AgentConsole() {
-  const { run, status } = useAgentRun("demo-run-1");
+  const [runId, setRunId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const { run, status } = useAgentRun(runId, TENANT_ID);
   const [selectedSkill, setSelectedSkill] = useState<SkillExecution | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+
+    createRun({ tenant_id: TENANT_ID, work_object: DEMO_WORK_OBJECT })
+      .then((res) => {
+        if (!cancelled) setRunId(res.run_id);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(String(err));
+      });
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  if (error) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <AlertCircle className="w-8 h-8 text-red-600" />
+          <p className="text-sm text-zinc-500">Failed to create run — {error}</p>
+        </div>
+      </div>
+    );
+  }
 
   if (!run) {
     return (

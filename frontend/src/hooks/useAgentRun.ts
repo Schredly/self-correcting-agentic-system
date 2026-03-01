@@ -8,29 +8,39 @@ export type ConnectionStatus =
   | "disconnected"
   | "error";
 
-const WS_BASE = "ws://localhost:8000";
 const MAX_RECONNECT_DELAY = 30_000;
 const INITIAL_RECONNECT_DELAY = 1_000;
 
-export function useAgentRun(runId: string): {
+export function useAgentRun(
+  runId: string | null,
+  tenantId: string
+): {
   run: AgentRun | null;
   status: ConnectionStatus;
 } {
   const [run, dispatch] = useReducer(agentReducer, null);
-  const [status, setStatus] = useState<ConnectionStatus>("connecting");
+  const [status, setStatus] = useState<ConnectionStatus>("disconnected");
   const wsRef = useRef<WebSocket | null>(null);
   const reconnectAttempt = useRef(0);
   const reconnectTimer = useRef<ReturnType<typeof setTimeout>>(undefined);
   const mountedRef = useRef(true);
 
   useEffect(() => {
+    if (runId === null) {
+      setStatus("disconnected");
+      return;
+    }
+
     mountedRef.current = true;
 
     function connect() {
       if (!mountedRef.current) return;
 
       setStatus("connecting");
-      const ws = new WebSocket(`${WS_BASE}/runs/${runId}/events`);
+      const wsProtocol = location.protocol === "https:" ? "wss:" : "ws:";
+      const ws = new WebSocket(
+        `${wsProtocol}//${location.host}/runs/${runId}/events?tenant_id=${encodeURIComponent(tenantId)}`
+      );
       wsRef.current = ws;
 
       ws.onopen = () => {
@@ -75,7 +85,7 @@ export function useAgentRun(runId: string): {
       clearTimeout(reconnectTimer.current);
       wsRef.current?.close();
     };
-  }, [runId]);
+  }, [runId, tenantId]);
 
   return { run, status };
 }
