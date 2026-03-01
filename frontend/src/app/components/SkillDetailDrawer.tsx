@@ -2,26 +2,16 @@ import { motion } from "motion/react";
 import { X, ArrowRight, Database, FileText, Wrench, TrendingUp } from "lucide-react";
 import { Badge } from "./ui/badge";
 import { ScrollArea } from "./ui/scroll-area";
-
-interface Skill {
-  id: string;
-  name: string;
-  status: "running" | "completed" | "pending" | "error";
-  reasoning: string;
-  confidence: number;
-  inputs?: any;
-  outputs?: any;
-  plan?: string[];
-  tools?: any[];
-  knowledge?: any[];
-}
+import type { SkillExecution } from "../../types/agents";
 
 interface SkillDetailDrawerProps {
-  skill: Skill;
+  skill: SkillExecution;
   onClose: () => void;
 }
 
 export default function SkillDetailDrawer({ skill, onClose }: SkillDetailDrawerProps) {
+  const details = skill.details;
+
   return (
     <>
       {/* Backdrop */}
@@ -59,7 +49,7 @@ export default function SkillDetailDrawer({ skill, onClose }: SkillDetailDrawerP
         <ScrollArea className="flex-1">
           <div className="p-6 space-y-6">
             {/* Inputs */}
-            {skill.inputs && (
+            {details?.inputs && (
               <section>
                 <div className="flex items-center gap-2 mb-3">
                   <Database className="w-4 h-4 text-zinc-500" />
@@ -67,32 +57,27 @@ export default function SkillDetailDrawer({ skill, onClose }: SkillDetailDrawerP
                 </div>
                 <div className="bg-zinc-50 rounded-lg p-4 border border-zinc-200">
                   <pre className="text-xs text-zinc-700 font-mono overflow-x-auto">
-                    {JSON.stringify(skill.inputs, null, 2)}
+                    {JSON.stringify(details.inputs, null, 2)}
                   </pre>
                 </div>
               </section>
             )}
 
-            {/* Knowledge Sources */}
-            {skill.knowledge && skill.knowledge.length > 0 && (
+            {/* Context Sources */}
+            {details?.context_sources && details.context_sources.length > 0 && (
               <section>
                 <div className="flex items-center gap-2 mb-3">
                   <FileText className="w-4 h-4 text-zinc-500" />
                   <h4 className="font-medium text-zinc-900">Retrieved Knowledge</h4>
                 </div>
                 <div className="space-y-2">
-                  {skill.knowledge.map((item, idx) => (
+                  {details.context_sources.map((source, idx) => (
                     <div
                       key={idx}
-                      className="bg-white rounded-lg p-3 border border-zinc-200 flex items-center justify-between"
+                      className="bg-white rounded-lg p-3 border border-zinc-200 flex items-center gap-3"
                     >
-                      <div className="flex items-center gap-3">
-                        <FileText className="w-4 h-4 text-blue-600" />
-                        <span className="text-sm text-zinc-900">{item.source}</span>
-                      </div>
-                      <Badge variant="secondary" className="font-mono text-xs">
-                        {Math.round(item.relevance * 100)}%
-                      </Badge>
+                      <FileText className="w-4 h-4 text-blue-600" />
+                      <span className="text-sm text-zinc-900">{source}</span>
                     </div>
                   ))}
                 </div>
@@ -100,14 +85,14 @@ export default function SkillDetailDrawer({ skill, onClose }: SkillDetailDrawerP
             )}
 
             {/* Plan Steps */}
-            {skill.plan && skill.plan.length > 0 && (
+            {details?.plan_steps && details.plan_steps.length > 0 && (
               <section>
                 <div className="flex items-center gap-2 mb-3">
                   <TrendingUp className="w-4 h-4 text-zinc-500" />
                   <h4 className="font-medium text-zinc-900">Execution Plan</h4>
                 </div>
                 <div className="space-y-3">
-                  {skill.plan.map((step, idx) => (
+                  {details.plan_steps.map((step, idx) => (
                     <div key={idx} className="flex items-start gap-3">
                       <div className="w-6 h-6 rounded-full bg-blue-100 text-blue-700 flex items-center justify-center flex-shrink-0 text-xs font-medium">
                         {idx + 1}
@@ -115,7 +100,7 @@ export default function SkillDetailDrawer({ skill, onClose }: SkillDetailDrawerP
                       <div className="flex-1 pt-0.5">
                         <p className="text-sm text-zinc-900">{step}</p>
                       </div>
-                      {idx < skill.plan!.length - 1 && (
+                      {idx < details.plan_steps!.length - 1 && (
                         <ArrowRight className="w-4 h-4 text-zinc-300 mt-1" />
                       )}
                     </div>
@@ -125,32 +110,20 @@ export default function SkillDetailDrawer({ skill, onClose }: SkillDetailDrawerP
             )}
 
             {/* Tool Actions */}
-            {skill.tools && skill.tools.length > 0 && (
+            {details?.tool_calls && details.tool_calls.length > 0 && (
               <section>
                 <div className="flex items-center gap-2 mb-3">
                   <Wrench className="w-4 h-4 text-zinc-500" />
                   <h4 className="font-medium text-zinc-900">Tool Actions</h4>
                 </div>
                 <div className="space-y-2">
-                  {skill.tools.map((tool, idx) => (
+                  {details.tool_calls.map((tool, idx) => (
                     <div
                       key={idx}
-                      className="bg-white rounded-lg p-3 border border-zinc-200 flex items-center justify-between"
+                      className="bg-white rounded-lg p-3 border border-zinc-200 flex items-center gap-3"
                     >
-                      <div className="flex items-center gap-3">
-                        <Wrench className="w-4 h-4 text-purple-600" />
-                        <span className="text-sm text-zinc-900">{tool.name}</span>
-                      </div>
-                      <Badge
-                        variant="secondary"
-                        className={
-                          tool.result === "success"
-                            ? "bg-emerald-100 text-emerald-700"
-                            : "bg-red-100 text-red-700"
-                        }
-                      >
-                        {tool.result}
-                      </Badge>
+                      <Wrench className="w-4 h-4 text-purple-600" />
+                      <span className="text-sm text-zinc-900">{tool}</span>
                     </div>
                   ))}
                 </div>
@@ -158,7 +131,7 @@ export default function SkillDetailDrawer({ skill, onClose }: SkillDetailDrawerP
             )}
 
             {/* Outputs */}
-            {skill.outputs && (
+            {details?.outputs && (
               <section>
                 <div className="flex items-center gap-2 mb-3">
                   <Database className="w-4 h-4 text-zinc-500" />
@@ -166,7 +139,7 @@ export default function SkillDetailDrawer({ skill, onClose }: SkillDetailDrawerP
                 </div>
                 <div className="bg-emerald-50 rounded-lg p-4 border border-emerald-200">
                   <pre className="text-xs text-emerald-900 font-mono overflow-x-auto">
-                    {JSON.stringify(skill.outputs, null, 2)}
+                    {details.outputs}
                   </pre>
                 </div>
               </section>

@@ -8,92 +8,23 @@ import {
   AlertCircle,
   ChevronDown,
   ChevronUp,
-  Database,
-  FileText,
   Zap,
-  TrendingUp,
 } from "lucide-react";
 import SkillDetailDrawer from "../components/SkillDetailDrawer";
 import { Badge } from "../components/ui/badge";
 import { ScrollArea } from "../components/ui/scroll-area";
+import { useAgentRun } from "../../hooks/useAgentRun";
+import type { SkillExecution } from "../../types/agents";
 
-interface Skill {
-  id: string;
-  name: string;
-  status: "running" | "completed" | "pending" | "error";
-  reasoning: string;
-  confidence: number;
-  inputs?: any;
-  outputs?: any;
-  plan?: string[];
-  tools?: any[];
-  knowledge?: any[];
-}
-
-const mockWorkObject = {
-  id: "WO-2847",
-  sourceSystem: "ServiceNow",
-  classification: ["Retail", "Returns", "Defective Item", "Vendor: Acme"],
-  priority: "High",
-  assignedTo: "Agent-07",
-  createdAt: "2026-03-01T08:32:00Z",
-  fields: {
-    customerName: "Sarah Johnson",
-    orderNumber: "ORD-98234",
-    productSKU: "ACM-2847-BLK",
-    issueDescription: "Product arrived damaged, box showed signs of shipping mishandling",
-    requestedResolution: "Refund",
-  },
-};
-
-const mockSkills: Skill[] = [
-  {
-    id: "skill-1",
-    name: "Classification Validator",
-    status: "completed",
-    reasoning: "Analyzed description and matched to Returns > Defective Item based on keywords 'damaged' and 'shipping mishandling'",
-    confidence: 0.94,
-    inputs: { description: mockWorkObject.fields.issueDescription },
-    outputs: { classification: ["Returns", "Defective Item"], confidence: 0.94 },
-    plan: ["Extract keywords", "Match to taxonomy", "Validate against rules"],
-    tools: [{ name: "ClassificationEngine", result: "success" }],
-    knowledge: [{ source: "Returns Policy Doc", relevance: 0.89 }],
-  },
-  {
-    id: "skill-2",
-    name: "Vendor Attribution",
-    status: "completed",
-    reasoning: "Matched product SKU ACM-2847-BLK to vendor Acme Corporation using product catalog",
-    confidence: 0.98,
-    inputs: { sku: "ACM-2847-BLK" },
-    outputs: { vendor: "Acme", vendorId: "VND-1029" },
-    plan: ["Lookup SKU", "Match to vendor", "Verify contract"],
-    tools: [{ name: "ProductCatalog", result: "success" }],
-    knowledge: [{ source: "Vendor Database", relevance: 0.98 }],
-  },
-  {
-    id: "skill-3",
-    name: "Policy Retrieval",
-    status: "running",
-    reasoning: "Fetching applicable return policies for defective items from vendor Acme",
-    confidence: 0.87,
-    plan: ["Query policy database", "Filter by vendor", "Rank by relevance"],
-    knowledge: [{ source: "Acme Return Policy", relevance: 0.92 }],
-  },
-  {
-    id: "skill-4",
-    name: "Resolution Recommender",
-    status: "pending",
-    reasoning: "Awaiting policy data to recommend optimal resolution",
-    confidence: 0.0,
-  },
-];
-
-function StatusIcon({ status }: { status: Skill["status"] }) {
-  switch (status) {
-    case "completed":
+function StatusIcon({ state }: { state: SkillExecution["state"] }) {
+  switch (state) {
+    case "complete":
       return <CheckCircle2 className="w-5 h-5 text-emerald-600" />;
-    case "running":
+    case "thinking":
+    case "retrieving":
+    case "planning":
+    case "executing":
+    case "verifying":
       return (
         <motion.div
           animate={{ rotate: 360 }}
@@ -109,7 +40,8 @@ function StatusIcon({ status }: { status: Skill["status"] }) {
   }
 }
 
-function ConfidenceBadge({ confidence }: { confidence: number }) {
+function ConfidenceBadge({ confidence }: { confidence?: number }) {
+  if (confidence == null) return null;
   const percentage = Math.round(confidence * 100);
   const color =
     percentage >= 90
@@ -125,8 +57,9 @@ function ConfidenceBadge({ confidence }: { confidence: number }) {
   );
 }
 
-function SkillCard({ skill, onClick }: { skill: Skill; onClick: () => void }) {
+function SkillCard({ skill, onClick }: { skill: SkillExecution; onClick: () => void }) {
   const [expanded, setExpanded] = useState(false);
+  const planSteps = skill.details?.plan_steps;
 
   return (
     <motion.div
@@ -137,10 +70,10 @@ function SkillCard({ skill, onClick }: { skill: Skill; onClick: () => void }) {
     >
       <div className="flex items-start justify-between mb-3">
         <div className="flex items-center gap-3">
-          <StatusIcon status={skill.status} />
+          <StatusIcon state={skill.state} />
           <div>
             <h4 className="font-medium text-zinc-900">{skill.name}</h4>
-            <p className="text-xs text-zinc-500 mt-1">Skill ID: {skill.id}</p>
+            <p className="text-xs text-zinc-500 mt-1">Skill ID: {skill.skill_id}</p>
           </div>
         </div>
         <ConfidenceBadge confidence={skill.confidence} />
@@ -149,10 +82,10 @@ function SkillCard({ skill, onClick }: { skill: Skill; onClick: () => void }) {
       <div className="space-y-2">
         <div className="flex items-start gap-2">
           <Zap className="w-4 h-4 text-zinc-400 mt-0.5 flex-shrink-0" />
-          <p className="text-sm text-zinc-600">{skill.reasoning}</p>
+          <p className="text-sm text-zinc-600">{skill.summary}</p>
         </div>
 
-        {skill.plan && (
+        {planSteps && planSteps.length > 0 && (
           <button
             onClick={(e) => {
               e.stopPropagation();
@@ -165,13 +98,13 @@ function SkillCard({ skill, onClick }: { skill: Skill; onClick: () => void }) {
           </button>
         )}
 
-        {expanded && skill.plan && (
+        {expanded && planSteps && (
           <motion.div
             initial={{ height: 0, opacity: 0 }}
             animate={{ height: "auto", opacity: 1 }}
             className="mt-2 ml-6 space-y-1"
           >
-            {skill.plan.map((step, idx) => (
+            {planSteps.map((step, idx) => (
               <div key={idx} className="flex items-center gap-2 text-xs text-zinc-600">
                 <div className="w-1 h-1 bg-zinc-400 rounded-full"></div>
                 {step}
@@ -185,7 +118,30 @@ function SkillCard({ skill, onClick }: { skill: Skill; onClick: () => void }) {
 }
 
 export default function AgentConsole() {
-  const [selectedSkill, setSelectedSkill] = useState<Skill | null>(null);
+  const { run, status } = useAgentRun("demo-run-1");
+  const [selectedSkill, setSelectedSkill] = useState<SkillExecution | null>(null);
+
+  if (!run) {
+    return (
+      <div className="h-full flex items-center justify-center">
+        <div className="flex flex-col items-center gap-3">
+          <motion.div
+            animate={{ rotate: 360 }}
+            transition={{ duration: 2, repeat: Infinity, ease: "linear" }}
+          >
+            <Loader2 className="w-8 h-8 text-blue-600" />
+          </motion.div>
+          <p className="text-sm text-zinc-500">
+            {status === "error"
+              ? "Connection error — retrying…"
+              : "Connecting to agent run…"}
+          </p>
+        </div>
+      </div>
+    );
+  }
+
+  const workObject = run.work_object;
 
   return (
     <div className="h-full flex">
@@ -195,15 +151,21 @@ export default function AgentConsole() {
           <div className="flex items-center justify-between mb-4">
             <h2 className="font-semibold text-zinc-900">Work Object</h2>
             <Badge variant="outline" className="text-xs">
-              {mockWorkObject.sourceSystem}
+              {workObject.source_system}
             </Badge>
           </div>
-          <div className="text-2xl font-semibold text-zinc-900 mb-2">{mockWorkObject.id}</div>
+          <div className="text-2xl font-semibold text-zinc-900 mb-2">{workObject.work_id}</div>
           <div className="flex items-center gap-2">
-            <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">
-              {mockWorkObject.priority}
-            </Badge>
-            <span className="text-sm text-zinc-500">Assigned to {mockWorkObject.assignedTo}</span>
+            {workObject.metadata?.priority && (
+              <Badge className="bg-orange-100 text-orange-700 hover:bg-orange-100">
+                {workObject.metadata.priority}
+              </Badge>
+            )}
+            {workObject.metadata?.assignedTo && (
+              <span className="text-sm text-zinc-500">
+                Assigned to {workObject.metadata.assignedTo}
+              </span>
+            )}
           </div>
         </div>
 
@@ -213,17 +175,17 @@ export default function AgentConsole() {
             Classification
           </label>
           <div className="flex items-center gap-2 flex-wrap">
-            {mockWorkObject.classification.map((level, idx) => (
+            {workObject.classification.map((level, idx) => (
               <div key={idx} className="flex items-center gap-2">
                 {idx > 0 && <ChevronRight className="w-4 h-4 text-zinc-400" />}
                 <span
                   className={`text-sm px-2 py-1 rounded ${
-                    idx === mockWorkObject.classification.length - 1
+                    idx === workObject.classification.length - 1
                       ? "bg-blue-100 text-blue-700 font-medium"
                       : "bg-white text-zinc-700"
                   }`}
                 >
-                  {level}
+                  {level.value}
                 </span>
               </div>
             ))}
@@ -238,14 +200,31 @@ export default function AgentConsole() {
                 Object Details
               </label>
               <div className="space-y-3">
-                {Object.entries(mockWorkObject.fields).map(([key, value]) => (
-                  <div key={key}>
-                    <div className="text-xs text-zinc-500 mb-1">
-                      {key.replace(/([A-Z])/g, " $1").trim()}
-                    </div>
-                    <div className="text-sm text-zinc-900">{value}</div>
-                  </div>
-                ))}
+                <div>
+                  <div className="text-xs text-zinc-500 mb-1">Title</div>
+                  <div className="text-sm text-zinc-900">{workObject.title}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-zinc-500 mb-1">Description</div>
+                  <div className="text-sm text-zinc-900">{workObject.description}</div>
+                </div>
+                <div>
+                  <div className="text-xs text-zinc-500 mb-1">Record Type</div>
+                  <div className="text-sm text-zinc-900">{workObject.record_type}</div>
+                </div>
+                {workObject.metadata &&
+                  Object.entries(workObject.metadata)
+                    .filter(([key]) => key !== "priority" && key !== "assignedTo")
+                    .map(([key, value]) => (
+                      <div key={key}>
+                        <div className="text-xs text-zinc-500 mb-1">
+                          {key.replace(/([A-Z])/g, " $1").trim()}
+                        </div>
+                        <div className="text-sm text-zinc-900">
+                          {typeof value === "string" ? value : JSON.stringify(value)}
+                        </div>
+                      </div>
+                    ))}
               </div>
             </div>
 
@@ -255,11 +234,19 @@ export default function AgentConsole() {
               </label>
               <div className="space-y-2 text-sm">
                 <div className="flex justify-between">
-                  <span className="text-zinc-500">Created</span>
+                  <span className="text-zinc-500">Started</span>
                   <span className="text-zinc-900">
-                    {new Date(mockWorkObject.createdAt).toLocaleString()}
+                    {new Date(run.started_at).toLocaleString()}
                   </span>
                 </div>
+                {run.completed_at && (
+                  <div className="flex justify-between">
+                    <span className="text-zinc-500">Completed</span>
+                    <span className="text-zinc-900">
+                      {new Date(run.completed_at).toLocaleString()}
+                    </span>
+                  </div>
+                )}
               </div>
             </div>
           </div>
@@ -274,8 +261,26 @@ export default function AgentConsole() {
             <p className="text-xs text-zinc-500">Real-time skill execution monitoring</p>
           </div>
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 bg-emerald-500 rounded-full animate-pulse"></div>
-            <span className="text-sm text-zinc-600">Active</span>
+            <div
+              className={`w-2 h-2 rounded-full ${
+                run.status === "running"
+                  ? "bg-emerald-500 animate-pulse"
+                  : run.status === "completed"
+                  ? "bg-emerald-500"
+                  : run.status === "failed"
+                  ? "bg-red-500"
+                  : "bg-zinc-400"
+              }`}
+            ></div>
+            <span className="text-sm text-zinc-600">
+              {run.status === "running"
+                ? "Active"
+                : run.status === "completed"
+                ? "Completed"
+                : run.status === "failed"
+                ? "Failed"
+                : "Queued"}
+            </span>
           </div>
         </div>
 
@@ -285,8 +290,8 @@ export default function AgentConsole() {
               {/* Timeline connector */}
               <div className="absolute left-[18px] top-[24px] bottom-[24px] w-[2px] bg-zinc-200"></div>
 
-              {mockSkills.map((skill) => (
-                <div key={skill.id} className="relative pl-12">
+              {run.skills.map((skill) => (
+                <div key={skill.skill_id} className="relative pl-12">
                   <SkillCard skill={skill} onClick={() => setSelectedSkill(skill)} />
                 </div>
               ))}
