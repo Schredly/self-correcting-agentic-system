@@ -36,6 +36,11 @@ class TenantConfigStore:
             return None
         return self.adapter_mappings.get((tenant_id, source_system, record_type))
 
+    def list_adapter_mappings(self, tenant_id: str) -> list[AdapterMapping]:
+        if not tenant_id:
+            return []
+        return [m for k, m in self.adapter_mappings.items() if k[0] == tenant_id]
+
     def upsert_adapter_mapping(self, mapping: AdapterMapping) -> None:
         if not mapping.tenant_id:
             raise ValueError("tenant_id must not be empty")

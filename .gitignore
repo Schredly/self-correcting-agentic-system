@@ -6,3 +6,6 @@ dist/
 # Python
 __pycache__/
 *.egg-info/
+
+# Service account credentials
+backend/credentials/

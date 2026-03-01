@@ -298,13 +298,38 @@ class TestScaffoldEndpoints:
             resp = await client.get("/admin/%20/google-drive/scaffold-plan")
         assert resp.status_code == 422
 
-    async def test_scaffold_apply_returns_501(self, seed_acme_schema: None) -> None:
+    async def test_scaffold_apply_400_without_root_folder(self, seed_acme_schema: None) -> None:
         from app.main import app
 
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-            resp = await client.post("/admin/acme/google-drive/scaffold-apply")
-        assert resp.status_code == 501
-        assert "not configured yet" in resp.json()["detail"]
+            resp = await client.post(
+                "/admin/acme/google-drive/scaffold-apply",
+                json={},
+            )
+        assert resp.status_code == 400
+        assert "root_folder_id required" in resp.json()["detail"]
+
+    async def test_scaffold_apply_404_without_schema(self) -> None:
+        from app.main import app
+
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.post(
+                "/admin/no-schema-tenant/google-drive/scaffold-apply",
+                json={"root_folder_id": "some-id"},
+            )
+        assert resp.status_code == 404
+
+    async def test_scaffold_apply_500_without_credentials(self, seed_acme_schema: None, monkeypatch: pytest.MonkeyPatch) -> None:
+        from app.main import app
+
+        monkeypatch.delenv("GOOGLE_SERVICE_ACCOUNT_FILE", raising=False)
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            resp = await client.post(
+                "/admin/acme/google-drive/scaffold-apply",
+                json={"root_folder_id": "some-id"},
+            )
+        assert resp.status_code == 500
+        assert "GOOGLE_SERVICE_ACCOUNT_FILE" in resp.json()["detail"]
 
     async def test_scaffold_plan_response_shape(self, seed_acme_schema: None) -> None:
         from app.main import app

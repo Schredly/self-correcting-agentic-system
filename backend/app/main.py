@@ -1,6 +1,8 @@
 """FastAPI app with event-driven WebSocket streaming and REST endpoints."""
 
+import json
 import logging
+import os
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 
@@ -10,12 +12,14 @@ from pydantic import BaseModel
 
 from .drive_scaffolder import DriveScaffolder
 from .event_bus import EventBus
+from .google_drive_provider import GoogleDriveProvider
 from .models import (
     AdapterFieldMapping,
     AdapterMapping,
     ClassificationLevelConfig,
     ClassificationSchema,
     GoogleDriveConfig,
+    ScaffoldApplyRequest,
     WorkObject,
 )
 from .orchestrator import Orchestrator
@@ -245,11 +249,77 @@ async def get_scaffold_plan(tenant_id: str):
     return [node.model_dump() for node in plan]
 
 
-@app.post("/admin/{tenant_id}/google-drive/scaffold-apply", status_code=501)
-async def apply_scaffold_plan(tenant_id: str):
-    """Apply the scaffold plan — not available until Google Drive auth is configured."""
+@app.post("/admin/{tenant_id}/google-drive/scaffold-apply")
+async def apply_scaffold_plan(tenant_id: str, body: ScaffoldApplyRequest):
+    """Create the folder scaffold in Google Drive and upload schema artifacts."""
     _validate_tenant_id(tenant_id)
-    raise HTTPException(
-        status_code=501,
-        detail="Google Drive auth/provider not configured yet",
+
+    # 1. Classification schema must exist
+    schema = tenant_config.get_schema(tenant_id)
+    if schema is None:
+        raise HTTPException(status_code=404, detail="Classification schema not found")
+
+    # 2. Resolve root_folder_id
+    root_folder_id = body.root_folder_id
+    if root_folder_id is None:
+        existing = tenant_config.get_drive_config(tenant_id)
+        if existing:
+            root_folder_id = existing.root_folder_id
+    if not root_folder_id:
+        raise HTTPException(
+            status_code=400,
+            detail="root_folder_id required — provide in request body or configure via PUT /admin/{tenant_id}/google-drive first",
+        )
+
+    # 3. Service account credentials
+    sa_file = os.environ.get("GOOGLE_SERVICE_ACCOUNT_FILE")
+    if not sa_file:
+        raise HTTPException(
+            status_code=500,
+            detail="GOOGLE_SERVICE_ACCOUNT_FILE environment variable is not set",
+        )
+
+    # 4. Build provider and apply scaffold
+    provider = GoogleDriveProvider(sa_file, shared_drive_id=body.shared_drive_id)
+    ids_map = await drive_scaffolder.apply_scaffold_plan(tenant_id, provider, root_folder_id)
+
+    # 5. Upload schema artifacts into _schema/ folder
+    schema_folder_path = f"AgenticKnowledge/{tenant_id}/_schema"
+    schema_folder_id = ids_map.get(schema_folder_path)
+    if schema_folder_id:
+        schema_json = schema.model_dump_json(indent=2).encode()
+        schema_file_id = await provider.ensure_file(
+            name="classification_schema.json",
+            parent_id=schema_folder_id,
+            content_type="application/json",
+            content_bytes=schema_json,
+        )
+        ids_map[f"{schema_folder_path}/classification_schema.json"] = schema_file_id
+
+        adapter_mappings = tenant_config.list_adapter_mappings(tenant_id)
+        mappings_payload = [m.model_dump(mode="json") for m in adapter_mappings]
+        mappings_json = json.dumps(mappings_payload, indent=2, default=str).encode()
+        mappings_file_id = await provider.ensure_file(
+            name="adapter_mappings.json",
+            parent_id=schema_folder_id,
+            content_type="application/json",
+            content_bytes=mappings_json,
+        )
+        ids_map[f"{schema_folder_path}/adapter_mappings.json"] = mappings_file_id
+
+    # 6. Update tenant Drive config
+    tenant_config.upsert_drive_config(
+        GoogleDriveConfig(
+            tenant_id=tenant_id,
+            root_folder_id=root_folder_id,
+            status="configured",
+            updated_at=datetime.now(timezone.utc),
+        )
     )
+
+    return {
+        "tenant_id": tenant_id,
+        "root_folder_id": root_folder_id,
+        "shared_drive_id": body.shared_drive_id,
+        "created": ids_map,
+    }
