@@ -1,6 +1,19 @@
 # Project Current Status
 
 ****
+**2026-03-01 11:30 UTC** — Drive scaffolder test suite
+
+- `1df5ae8` — Add tests for Drive scaffolder and scaffold endpoints
+- **`backend/tests/__init__.py`** (new) — test package init
+- **`backend/tests/test_drive_scaffolder.py`** (new) — 23 tests across 3 classes:
+  - `TestBuildScaffoldPlan` (12 tests) — missing schema 404, return types, all-folders kind, fixed structure names, dimension folders match schema levels, notes contain classification keys, parent path consistency, determinism, zero levels edge case, many levels (5), tenant isolation (shared root but isolated subtrees), documents-last ordering
+  - `TestApplyScaffoldPlan` (6 tests) — calls provider for each folder, returns path→id mapping, root_folder_id passthrough, None default, child parent_id resolution from accumulated map, missing schema 404
+  - `TestScaffoldEndpoints` (5 tests) — GET scaffold-plan 200 with seeded schema, 404 without schema, 422 on empty tenant_id, POST scaffold-apply 501, response shape validation (kind/name/parent_path fields)
+- **`FakeProvider`** — in-memory `DriveProvider` implementation for testing, tracks calls list and auto-increments folder IDs
+- Run: `cd backend && python3.11 -m pytest tests/test_drive_scaffolder.py -v`
+****
+
+****
 **2026-03-01 11:00 UTC** — Drive scaffolding planner and provider interface
 
 - `4b020b1` — Add Drive scaffolding planner and provider interface
@@ -101,6 +114,7 @@
   - `9e63522` — Update project status doc with frontend REST + WebSocket wiring
   - `4e2fa07` — Add tenant-level admin configuration endpoints
   - `4b020b1` — Add Drive scaffolding planner and provider interface
+  - `1df5ae8` — Add tests for Drive scaffolder and scaffold endpoints
 
 ### Directory structure
 ```
@@ -109,6 +123,9 @@ self-correcting-agentic-system/
 ├── ai-context/                 # architecture docs (00–10) + project_current_status.md
 ├── backend/
 │   ├── pyproject.toml          # fastapi, uvicorn, pydantic (pip install -e .)
+│   ├── tests/
+│   │   ├── __init__.py
+│   │   └── test_drive_scaffolder.py  # 23 tests: scaffold plan, apply, endpoints
 │   └── app/
 │       ├── __init__.py
 │       ├── event_bus.py        # In-memory per-run EventBus with history replay
