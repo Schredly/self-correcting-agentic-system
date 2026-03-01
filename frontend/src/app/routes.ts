@@ -8,6 +8,7 @@ import EvaluationDashboard from "./screens/EvaluationDashboard";
 import TenantSetup from "./screens/TenantSetup";
 import ServiceNowConnector from "./screens/ServiceNowConnector";
 import TenantOnboarding from "./screens/TenantOnboarding";
+import TenantManagement from "./screens/TenantManagement";
 
 export const router = createBrowserRouter([
   {
@@ -22,6 +23,7 @@ export const router = createBrowserRouter([
       { path: "tenant-setup", Component: TenantSetup },
       { path: "connectors/servicenow", Component: ServiceNowConnector },
       { path: "tenant-onboarding", Component: TenantOnboarding },
+      { path: "admin/tenants", Component: TenantManagement },
     ],
   },
 ]);

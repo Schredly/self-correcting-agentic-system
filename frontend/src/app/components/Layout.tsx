@@ -13,6 +13,7 @@ import {
   UserCircle,
   Menu,
   Settings,
+  Building2,
   Cable,
   Workflow,
 } from "lucide-react";
@@ -38,6 +39,7 @@ const navigation = [
     name: "Admin",
     icon: SettingsIcon,
     children: [
+      { name: "Tenants", path: "/admin/tenants", icon: Building2 },
       { name: "Tenant Setup", path: "/tenant-setup", icon: Settings },
       { name: "Classification", path: "/classification", icon: FolderTree },
       { name: "Adapters", path: "/adapters", icon: Plug },
