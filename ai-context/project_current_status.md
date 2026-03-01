@@ -1,6 +1,44 @@
 # Project Current Status
 
 ****
+**2026-03-01 13:00 UTC** — Figma UI redesign incorporation
+
+- `f6f7d5f` — Incorporate Figma UI redesign with new layout, screens, and components
+- **`frontend/src/app/components/PageHeader.tsx`** (new) — Reusable page header with breadcrumb navigation, title, description, and actions slot. Used by all screens.
+- **`frontend/src/app/components/TenantSelector.tsx`** (new) — Dropdown tenant picker with search, mock tenant list, configured/needs-setup status badges, manage/create tenant actions.
+- **`frontend/src/app/components/Layout.tsx`** (rewritten) — Complete redesign:
+  - Top app bar with Bot icon + "Agent Control Plane" title, centered "Dev Environment" badge, right-aligned tenant selector + user avatar dropdown + settings gear
+  - Collapsible left sidebar with nested Admin section (Tenant Setup, Classification, Adapters, Connectors)
+  - Mobile responsive: hamburger menu toggles sidebar on small screens
+  - User menu dropdown with profile/settings/sign-out options
+- **`frontend/src/app/routes.ts`** (updated) — Added 2 new routes: `/tenant-setup` → `TenantSetup`, `/connectors/servicenow` → `ServiceNowConnector`
+- **`frontend/src/app/screens/TenantSetup.tsx`** (new) — 7-step setup wizard:
+  - Steps: Define schema, Connect Drive, Apply scaffolding, Sync knowledge, Connect ServiceNow, Map fields, E2E test
+  - Tenant health summary card with progress bar and status grid (Schema, Drive, ServiceNow, Last Run)
+  - Two-column layout: setup checklist (left) + step detail panel (right)
+  - Each step has its own panel component with forms, diagnostic logs, and status indicators
+- **`frontend/src/app/screens/ServiceNowConnector.tsx`** (new) — Full connector configuration:
+  - Connection status card with connected/error/untested states
+  - Two-column layout: connection settings form (left) + test operations (right)
+  - Test operations: test connection, fetch incident by sys_id, list incident fields
+  - Dark terminal-style test results console with animated log entries
+  - Quick tips card
+- **`frontend/src/app/screens/AgentConsole.tsx`** (merged) — Added PageHeader with breadcrumbs and wrapped content in flex-col layout. **Preserved all live WebSocket data wiring** (useAgentRun, createRun, canonical SkillExecution types). No mock data.
+- **`frontend/src/app/screens/ClassificationManager.tsx`** (updated) — Replaced inline header with PageHeader component (breadcrumbs: Home > Admin > Classification). Cleaned up unused imports.
+- **`frontend/src/app/screens/AdapterConfiguration.tsx`** (updated) — Replaced inline header with PageHeader component (breadcrumbs: Home > Admin > Adapters).
+- **`frontend/src/app/screens/KnowledgeAlignment.tsx`** (rewritten) — Major upgrade:
+  - Document table with columns: Name, Path, Modified, Labels, Source, Status
+  - Document sync status indicators (synced, syncing, error, pending)
+  - Header with Drive status chip, last sync time, document count, sync button
+  - Test Drive and Apply Scaffold action buttons
+  - Right panel: document detail with metadata, applied labels, schema alignment check, edit/re-sync actions
+  - AnimatePresence transitions for table rows and detail panel
+- **`frontend/src/app/screens/EvaluationDashboard.tsx`** (updated) — Replaced inline header with PageHeader component (breadcrumbs: Home > Evaluation). Cleaned up unused imports.
+- **`frontend/src/app/components/SkillDetailDrawer.tsx`** (unchanged) — Kept existing version using canonical `SkillExecution` types (Figma version used local mock types).
+- **Build verified** — `vite build` succeeds (2826 modules, 332 KB gzipped JS). Only pre-existing TS warnings in ClassificationManager (react-dnd ref types) and calendar.tsx.
+****
+
+****
 **2026-03-01 12:00 UTC** — GoogleDriveProvider implementation and scaffold-apply wiring
 
 - `ca7c192` — Implement GoogleDriveProvider and wire scaffold-apply endpoint
@@ -143,6 +181,8 @@
   - `4b020b1` — Add Drive scaffolding planner and provider interface
   - `1df5ae8` — Add tests for Drive scaffolder and scaffold endpoints
   - `ca7c192` — Implement GoogleDriveProvider and wire scaffold-apply endpoint
+  - `fba4631` — Add tests for GoogleDriveProvider with mocked Drive API
+  - `f6f7d5f` — Incorporate Figma UI redesign with new layout, screens, and components
 
 ### Directory structure
 ```
@@ -154,7 +194,8 @@ self-correcting-agentic-system/
 │   ├── README.md               # Setup docs, Google Drive integration guide, curl examples
 │   ├── tests/
 │   │   ├── __init__.py
-│   │   └── test_drive_scaffolder.py  # 25 tests: scaffold plan, apply, endpoints
+│   │   ├── test_drive_scaffolder.py  # 25 tests: scaffold plan, apply, endpoints
+│   │   └── test_google_drive_provider.py  # GoogleDriveProvider unit tests with mocked Drive API
 │   └── app/
 │       ├── __init__.py
 │       ├── event_bus.py        # In-memory per-run EventBus with history replay
@@ -187,13 +228,17 @@ self-correcting-agentic-system/
         │   ├── App.tsx
         │   ├── routes.ts
         │   ├── screens/
-        │   │   ├── AgentConsole.tsx          # live data via useAgentRun (no mock data)
-        │   │   ├── EvaluationDashboard.tsx
-        │   │   ├── AdapterConfiguration.tsx
-        │   │   ├── ClassificationManager.tsx
-        │   │   └── KnowledgeAlignment.tsx
+        │   │   ├── AgentConsole.tsx          # live data via useAgentRun + PageHeader (no mock data)
+        │   │   ├── EvaluationDashboard.tsx   # PageHeader + recharts (mock data)
+        │   │   ├── AdapterConfiguration.tsx  # PageHeader (mock data)
+        │   │   ├── ClassificationManager.tsx # PageHeader + react-dnd tree (mock data)
+        │   │   ├── KnowledgeAlignment.tsx    # document table + detail panel (mock data)
+        │   │   ├── TenantSetup.tsx           # 7-step setup wizard (mock data)
+        │   │   └── ServiceNowConnector.tsx   # connector config + test console (mock data)
         │   └── components/
-        │       ├── Layout.tsx
+        │       ├── Layout.tsx               # top bar + collapsible sidebar + nested admin nav
+        │       ├── PageHeader.tsx            # reusable header with breadcrumbs + actions slot
+        │       ├── TenantSelector.tsx        # dropdown tenant picker with search + status
         │       ├── SkillDetailDrawer.tsx     # uses canonical SkillExecution type
         │       ├── figma/
         │       │   └── ImageWithFallback.tsx
@@ -364,7 +409,19 @@ export interface AgentEvent {
     - `POST scaffold-apply` fully wired: validates schema + root_folder_id + credentials, creates folders, uploads `classification_schema.json` + `adapter_mappings.json` into `_schema/`, updates Drive config status
     - Credentials via `GOOGLE_SERVICE_ACCOUNT_FILE` env var, `backend/credentials/` git-ignored
     - `backend/README.md` with setup docs and curl examples
-18. **Frontend toolchain set up** (`128b0e9`):
+18. **GoogleDriveProvider tests** (`fba4631`):
+    - `backend/tests/test_google_drive_provider.py` — unit tests with mocked Google Drive API
+    - Tests: service account auth, ensure_folder (create + idempotent), ensure_file (create + overwrite), Shared Drive support
+19. **Figma UI redesign incorporated** (`f6f7d5f`):
+    - New components: `PageHeader.tsx` (breadcrumbs + actions), `TenantSelector.tsx` (dropdown picker)
+    - New screens: `TenantSetup.tsx` (7-step wizard), `ServiceNowConnector.tsx` (connector config)
+    - `Layout.tsx` rewritten: top app bar + collapsible sidebar with nested admin nav
+    - All screens updated with PageHeader and breadcrumb navigation
+    - `KnowledgeAlignment.tsx` major redesign: document table + detail panel + sync status
+    - `AgentConsole.tsx` merged: added PageHeader while preserving all live WebSocket data wiring
+    - `SkillDetailDrawer.tsx` unchanged (kept canonical SkillExecution types over Figma mock types)
+    - Build verified: 2826 modules, 332 KB gzipped
+20. **Frontend toolchain set up** (`128b0e9`):
    - `package.json` — 43 dependencies, scripts: `dev`, `build`, `preview`
    - `tsconfig.json` — strict mode, bundler resolution, `@/*` path alias, `noUncheckedIndexedAccess`
    - `vite.config.ts` — `@vitejs/plugin-react` + `@tailwindcss/vite`, `@/` alias, dev server on port 3000 with proxy to `localhost:8000` (API + WebSocket)
@@ -419,16 +476,24 @@ export interface AgentEvent {
 ### Frontend
 - **Frontend fully wired** — creates runs via REST, subscribes with tenant_id
 - Each page load creates a fresh run (no hardcoded run_id)
+- **Figma UI redesign incorporated** — new Layout with top bar + collapsible sidebar, PageHeader on all screens, TenantSelector, 2 new screens (TenantSetup, ServiceNowConnector)
 - Next: make work object configurable (currently hardcoded demo data in AgentConsole)
+- Next: wire TenantSelector to backend (currently uses mock tenant list)
+- Next: wire TenantSetup wizard steps to admin endpoints
+- Next: wire ServiceNowConnector to real ServiceNow API
+- Next: wire ClassificationManager to classification-schema endpoints
+- Next: wire KnowledgeAlignment to Drive/document endpoints
 
-### Other screens
-- `EvaluationDashboard.tsx`, `AdapterConfiguration.tsx`, `ClassificationManager.tsx`, `KnowledgeAlignment.tsx` — still have their own data needs (not addressed yet)
-- These screens have pre-existing TS errors (unused imports, type mismatches) that should be cleaned up when they are wired to real data
+### Other screens (all have PageHeader, all use mock data — not yet wired to backend)
+- `EvaluationDashboard.tsx` — recharts (bar, line, pie), metric cards with trend indicators, drift analysis table
+- `AdapterConfiguration.tsx` — adapter cards with connection status, field mapping editor
+- `ClassificationManager.tsx` — react-dnd drag-and-drop tree editor, external system field mapping panel
+- `KnowledgeAlignment.tsx` — document table with sync status, detail panel with metadata/labels/schema alignment
+- `TenantSetup.tsx` — 7-step wizard (schema → drive → scaffold → sync → servicenow → mapping → e2e test), health summary card
+- `ServiceNowConnector.tsx` — connection form, test operations, terminal-style log console
 
-### Pre-existing TS errors in untouched screens
-- `ClassificationManager.tsx` — unused imports (motion, Settings2, Eye, EyeOff, ChevronUp), ref type mismatch, unused `setFieldMapping`
-- `EvaluationDashboard.tsx` — unused imports (useState, Filter, recharts)
-- `KnowledgeAlignment.tsx` — unused imports (Filter, Button), unused `selectedTags`/`setSelectedTags`
+### Pre-existing TS errors (remaining after Figma cleanup)
+- `ClassificationManager.tsx` — react-dnd ref type mismatch (needs react-dnd upgrade), unused `setFieldMapping`
 - `calendar.tsx` — `IconLeft` API changed in react-day-picker v9
 
 ---
